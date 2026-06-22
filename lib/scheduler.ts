@@ -34,9 +34,8 @@ export function generateSchedule(
     // キャリーオーバー調整：前月過剰分を今月の目標から引く（0.5単位刻み）
     const carry = carryover[doc.name] ?? 0;
     const adjusted = baseTarget - carry;
-    // 最低0.5単位は確保、日直のみ対応は最大2単位
-    const cappedTarget = doc.hasChildcare === true ? Math.min(adjusted, 2) : adjusted;
-    const target = Math.max(0.5, Math.round(cappedTarget * 2) / 2);
+    // 日直のみ対応は繰り越し関係なく常に2単位固定、それ以外は最低0.5単位確保
+    const target = doc.hasChildcare === true ? 2 : Math.max(0.5, Math.round(adjusted * 2) / 2);
     return { doctor: doc, target, baseTarget, accumulated: 0, weekendHolidayCount: 0 };
   });
 
