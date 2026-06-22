@@ -2,48 +2,43 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { Doctor, CustomHoliday } from "@/lib/types";
-import { loadDoctors, saveDoctor, createDoctor, purgeExpiredData, loadCustomHolidays } from "@/lib/storage";
+import { loadDoctors, saveDoctor, createDoctor, loadCustomHolidays, purgeExpiredData } from "@/lib/storage";
 import DoctorForm from "@/components/DoctorForm";
 
-// 翌月をデフォルトに
-const now = new Date();
-const NEXT_MONTH = now.getMonth() + 2 > 12 ? 1 : now.getMonth() + 2;
-const NEXT_YEAR = now.getMonth() + 2 > 12 ? now.getFullYear() + 1 : now.getFullYear();
+const NOW = new Date();
+const NEXT_MONTH = NOW.getMonth() + 2 > 12 ? 1 : NOW.getMonth() + 2;
+const NEXT_MONTH_YEAR = NOW.getMonth() + 2 > 12 ? NOW.getFullYear() + 1 : NOW.getFullYear();
+const NEXT_YEAR = NEXT_MONTH_YEAR;
 
 export default function DoctorPage() {
   const [loggedIn, setLoggedIn] = useState(false);
   const [nameInput, setNameInput] = useState("");
   const [doctorName, setDoctorName] = useState("");
   const [doctor, setDoctor] = useState<Doctor | null>(null);
-  const [startYear, setStartYear] = useState(NEXT_YEAR);
+  const [startYear, setStartYear] = useState(NEXT_MONTH_YEAR);
   const [startMonth, setStartMonth] = useState(NEXT_MONTH);
   const [saved, setSaved] = useState(false);
   const [customHolidays, setCustomHolidays] = useState<CustomHoliday[]>([]);
+  const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    purgeExpiredData();
-  }, []);
+  useEffect(() => { purgeExpiredData(); }, []);
 
   useEffect(() => {
     if (!loggedIn) return;
-    const holidays = loadCustomHolidays(startYear, startMonth);
-    setCustomHolidays(holidays);
-    // 期間が変わったら対応する医師データをロード（or 新規作成）
-    const doctors = loadDoctors(startYear, startMonth);
-    const existing = doctors.find((d) => d.name === doctorName);
-    if (existing) {
-      setDoctor(existing);
-    } else {
-      setDoctor(createDoctor(doctorName, startYear, startMonth));
-    }
-    setSaved(false);
+    setLoading(true);
+    Promise.all([
+      loadCustomHolidays(startYear, startMonth),
+      loadDoctors(startYear, startMonth),
+    ]).then(([holidays, doctors]) => {
+      setCustomHolidays(holidays);
+      const existing = doctors.find((d) => d.name === doctorName);
+      setDoctor(existing ?? createDoctor(doctorName, startYear, startMonth));
+      setSaved(false);
+    }).finally(() => setLoading(false));
   }, [startYear, startMonth, loggedIn, doctorName]);
 
   function normalizeName(name: string): string {
-    return name
-      .trim()
-      .replace(/　/g, " ")       // 全角スペース→半角
-      .replace(/\s+/g, " ");     // 連続スペース→1つ
+    return name.trim().replace(/　/g, " ").replace(/\s+/g, " ");
   }
 
   function handleLogin() {
@@ -53,7 +48,7 @@ export default function DoctorPage() {
     setLoggedIn(true);
   }
 
-  function handleSave() {
+  async function handleSave() {
     if (!doctor) return;
     const now = new Date();
     const updated: Doctor = {
@@ -61,7 +56,7 @@ export default function DoctorPage() {
       savedAt: now.toISOString(),
       expiresAt: new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000).toISOString(),
     };
-    saveDoctor(startYear, startMonth, updated);
+    await saveDoctor(startYear, startMonth, updated);
     setDoctor(updated);
     setSaved(true);
     setTimeout(() => setSaved(false), 3000);
@@ -78,7 +73,6 @@ export default function DoctorPage() {
             <h1 className="text-2xl font-bold text-gray-800">医師ログイン</h1>
             <p className="text-sm text-gray-500 mt-1">お名前を入力してください</p>
           </div>
-
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">氏名</label>
             <input
@@ -90,7 +84,6 @@ export default function DoctorPage() {
               className="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
-
           <button
             onClick={handleLogin}
             disabled={!nameInput.trim()}
@@ -98,7 +91,6 @@ export default function DoctorPage() {
           >
             ログイン
           </button>
-
           <Link href="/" className="block text-center text-sm text-gray-400 hover:text-gray-600">← トップへ戻る</Link>
         </div>
       </main>
@@ -110,15 +102,12 @@ export default function DoctorPage() {
       <div className="max-w-2xl mx-auto space-y-6">
         <div className="bg-white rounded-xl shadow-sm p-6">
           <div className="flex items-center justify-between mb-4">
-            <div>
-              <h1 className="text-xl font-bold text-gray-800">{doctorName} さんの入力フォーム</h1>
-            </div>
+            <h1 className="text-xl font-bold text-gray-800">{doctorName} さんの入力フォーム</h1>
             <Link href="/" className="text-sm text-gray-400 hover:text-gray-600">← 戻る</Link>
           </div>
 
-          {/* 期間選択 */}
           <div className="bg-blue-50 rounded-lg p-4 mb-6">
-            <label className="block text-sm font-medium text-gray-700 mb-2">対象開始月</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">対象月</label>
             <div className="flex gap-2 items-center flex-wrap">
               <select
                 value={startYear}
@@ -138,7 +127,9 @@ export default function DoctorPage() {
             </div>
           </div>
 
-          {doctor && (
+          {loading ? (
+            <div className="text-center py-8 text-gray-400">読み込み中...</div>
+          ) : doctor && (
             <DoctorForm
               doctor={doctor}
               onChange={setDoctor}

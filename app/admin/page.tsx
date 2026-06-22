@@ -3,17 +3,9 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { Doctor, Schedule, CustomHoliday, Carryover } from "@/lib/types";
 import {
-  loadDoctors,
-  saveSchedule,
-  loadSchedule,
-  deleteSchedule,
-  loadCustomHolidays,
-  saveCustomHolidays,
-  loadCarryover,
-  saveCarryover,
-  prevMonth,
-  purgeExpiredData,
-  deleteDoctor,
+  loadDoctors, saveSchedule, loadSchedule, deleteSchedule,
+  loadCustomHolidays, saveCustomHolidays,
+  loadCarryover, saveCarryover, prevMonth, purgeExpiredData, deleteDoctor,
 } from "@/lib/storage";
 import { generateSchedule } from "@/lib/scheduler";
 import { getTargetUnits, getRotatingTarget, getShiftUnits } from "@/lib/holidays";
@@ -23,10 +15,9 @@ import UnitCountChart from "@/components/UnitCountChart";
 import CustomHolidayEditor from "@/components/CustomHolidayEditor";
 
 const ADMIN_PASSWORD = process.env.NEXT_PUBLIC_ADMIN_PASSWORD ?? "0515";
-const _now = new Date();
-const NEXT_MONTH = _now.getMonth() + 2 > 12 ? 1 : _now.getMonth() + 2;
-const NEXT_YEAR = _now.getMonth() + 2 > 12 ? _now.getFullYear() + 1 : _now.getFullYear();
-const CURRENT_YEAR = _now.getFullYear();
+const NOW = new Date();
+const NEXT_MONTH = NOW.getMonth() + 2 > 12 ? 1 : NOW.getMonth() + 2;
+const NEXT_MONTH_YEAR = NOW.getMonth() + 2 > 12 ? NOW.getFullYear() + 1 : NOW.getFullYear();
 
 type ViewMode = "calendar" | "table";
 
@@ -35,7 +26,7 @@ export default function AdminPage() {
   const [pwInput, setPwInput] = useState("");
   const [pwError, setPwError] = useState(false);
 
-  const [year, setYear] = useState(NEXT_YEAR);
+  const [year, setYear] = useState(NEXT_MONTH_YEAR);
   const [month, setMonth] = useState(NEXT_MONTH);
 
   const [doctors, setDoctors] = useState<Doctor[]>([]);
@@ -44,17 +35,26 @@ export default function AdminPage() {
   const [carryover, setCarryover] = useState<Carryover>({});
   const [warnings, setWarnings] = useState<string[]>([]);
   const [viewMode, setViewMode] = useState<ViewMode>("calendar");
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => { purgeExpiredData(); }, []);
 
   useEffect(() => {
     if (!authed) return;
-    setDoctors(loadDoctors(year, month));
-    setSchedule(loadSchedule(year, month));
-    setCustomHolidays(loadCustomHolidays(year, month));
+    setLoading(true);
     const prev = prevMonth(year, month);
-    setCarryover(loadCarryover(prev.year, prev.month));
-    setWarnings([]);
+    Promise.all([
+      loadDoctors(year, month),
+      loadSchedule(year, month),
+      loadCustomHolidays(year, month),
+      loadCarryover(prev.year, prev.month),
+    ]).then(([docs, sched, holidays, carry]) => {
+      setDoctors(docs);
+      setSchedule(sched);
+      setCustomHolidays(holidays);
+      setCarryover(carry);
+      setWarnings([]);
+    }).finally(() => setLoading(false));
   }, [authed, year, month]);
 
   function handleLogin() {
@@ -62,35 +62,37 @@ export default function AdminPage() {
     else setPwError(true);
   }
 
-  function handleGenerate() {
+  async function handleGenerate() {
     const { schedule: newSchedule, warnings: newWarnings, newCarryover } = generateSchedule(
       year, month, doctors, customHolidays, carryover
     );
-    saveSchedule(year, month, newSchedule);
-    saveCarryover(year, month, newCarryover);
+    await Promise.all([
+      saveSchedule(year, month, newSchedule),
+      saveCarryover(year, month, newCarryover),
+    ]);
     setSchedule(newSchedule);
     setWarnings(newWarnings);
   }
 
-  function handleChangeDayshift(date: string, name: string | null) {
+  async function handleChangeDayshift(date: string, name: string | null) {
     if (!schedule) return;
     const updated = {
       ...schedule,
       assignments: schedule.assignments.map((a) => a.date === date ? { ...a, dayshift: name } : a),
     };
-    recalc(updated);
+    await recalc(updated);
   }
 
-  function handleChangeOncall(date: string, name: string | null) {
+  async function handleChangeOncall(date: string, name: string | null) {
     if (!schedule) return;
     const updated = {
       ...schedule,
       assignments: schedule.assignments.map((a) => a.date === date ? { ...a, oncall: name } : a),
     };
-    recalc(updated);
+    await recalc(updated);
   }
 
-  function recalc(updated: Schedule) {
+  async function recalc(updated: Schedule) {
     const counts: Record<string, number> = {};
     const whCounts: Record<string, number> = {};
     updated.assignments.forEach((a) => {
@@ -105,25 +107,25 @@ export default function AdminPage() {
       }
     });
     const final = { ...updated, unitCounts: counts, weekendHolidayCounts: whCounts };
-    saveSchedule(year, month, final);
+    await saveSchedule(year, month, final);
     setSchedule(final);
   }
 
-  function handleResetSchedule() {
+  async function handleResetSchedule() {
     if (!confirm("当直表をリセットしますか？手動での修正内容も消えます。")) return;
-    deleteSchedule(year, month);
+    await deleteSchedule(year, month);
     setSchedule(null);
     setWarnings([]);
   }
 
-  function handleDeleteDoctor(doctorId: string, doctorName: string) {
+  async function handleDeleteDoctor(doctorId: string, doctorName: string) {
     if (!confirm(`「${doctorName}」のデータを削除しますか？`)) return;
-    deleteDoctor(year, month, doctorId);
-    setDoctors(loadDoctors(year, month));
+    await deleteDoctor(year, month, doctorId);
+    setDoctors(await loadDoctors(year, month));
   }
 
-  function handleCustomHolidaysChange(holidays: CustomHoliday[]) {
-    saveCustomHolidays(year, month, holidays);
+  async function handleCustomHolidaysChange(holidays: CustomHoliday[]) {
+    await saveCustomHolidays(year, month, holidays);
     setCustomHolidays(holidays);
   }
 
@@ -170,7 +172,6 @@ export default function AdminPage() {
   return (
     <main className="min-h-screen bg-gray-50 p-4">
       <div className="max-w-5xl mx-auto space-y-6">
-
         <div className="bg-white rounded-xl shadow-sm p-6 flex items-center justify-between">
           <div>
             <h1 className="text-xl font-bold text-gray-800">管理者画面</h1>
@@ -179,12 +180,12 @@ export default function AdminPage() {
           <Link href="/" className="text-sm text-gray-400 hover:text-gray-600">← 戻る</Link>
         </div>
 
-        {/* 対象月選択 */}
+        {/* 対象月 */}
         <div className="bg-white rounded-xl shadow-sm p-6">
           <h2 className="font-semibold text-gray-700 mb-4">対象月</h2>
           <div className="flex gap-2 items-center flex-wrap">
             <select value={year} onChange={(e) => setYear(Number(e.target.value))} className="border rounded px-3 py-2">
-              {[CURRENT_YEAR - 1, CURRENT_YEAR, CURRENT_YEAR + 1].map((y) => (
+              {[NOW.getFullYear() - 1, NOW.getFullYear(), NOW.getFullYear() + 1].map((y) => (
                 <option key={y} value={y}>{y}年</option>
               ))}
             </select>
@@ -215,7 +216,9 @@ export default function AdminPage() {
         {/* 医師一覧 */}
         <div className="bg-white rounded-xl shadow-sm p-6">
           <h2 className="font-semibold text-gray-700 mb-4">医師一覧</h2>
-          {doctors.length === 0 ? (
+          {loading ? (
+            <p className="text-gray-400 text-sm">読み込み中...</p>
+          ) : doctors.length === 0 ? (
             <p className="text-gray-400 text-sm">この月の医師データがありません。</p>
           ) : (
             <div className="overflow-x-auto">
@@ -224,8 +227,8 @@ export default function AdminPage() {
                   <tr className="bg-gray-50 text-left">
                     <th className="px-3 py-2">氏名</th>
                     <th className="px-3 py-2">年限</th>
-                    <th className="px-3 py-2">他科ローテ</th>
-                    <th className="px-3 py-2">子育て</th>
+                    <th className="px-3 py-2">ローテ</th>
+                    <th className="px-3 py-2">日直のみ</th>
                     <th className="px-3 py-2">基本目標</th>
                     <th className="px-3 py-2">今月目標</th>
                     <th className="px-3 py-2">当直不可</th>
@@ -243,9 +246,9 @@ export default function AdminPage() {
                     return (
                       <tr key={doc.id} className="border-b">
                         <td className="px-3 py-2 font-medium">{doc.name}</td>
-                        <td className="px-3 py-2">{doc.yearsOfExperience}年目</td>
-                        <td className="px-3 py-2 text-center">{doc.isRotating ? "✓" : "—"}</td>
-                        <td className="px-3 py-2 text-center">{doc.hasChildcare ? "✓" : "—"}</td>
+                        <td className="px-3 py-2">{doc.yearsOfExperience != null ? `${doc.yearsOfExperience}年目` : "—"}</td>
+                        <td className="px-3 py-2 text-center">{doc.isRotating == null ? "—" : doc.isRotating ? "他科" : "当科"}</td>
+                        <td className="px-3 py-2 text-center">{doc.hasChildcare == null ? "—" : doc.hasChildcare ? "✓" : "—"}</td>
                         <td className="px-3 py-2 text-center">{baseTarget}</td>
                         <td className="px-3 py-2 text-center font-medium">
                           {adjusted}
@@ -258,17 +261,12 @@ export default function AdminPage() {
                         <td className="px-3 py-2 text-center">{doc.unavailableDates.oncall.length}日</td>
                         <td className="px-3 py-2 text-center">{doc.unavailableDates.dayshift.length}日</td>
                         <td className="px-3 py-2">
-                          <span className={`px-2 py-0.5 rounded-full text-xs ${doc.savedAt ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}`}>
-                            {doc.savedAt ? "入力済" : "未入力"}
+                          <span className={`px-2 py-0.5 rounded-full text-xs ${doc.yearsOfExperience != null && doc.isRotating != null && doc.hasChildcare != null ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"}`}>
+                            {doc.yearsOfExperience != null && doc.isRotating != null && doc.hasChildcare != null ? "入力済" : "未完了"}
                           </span>
                         </td>
                         <td className="px-3 py-2">
-                          <button
-                            onClick={() => handleDeleteDoctor(doc.id, doc.name)}
-                            className="text-red-400 hover:text-red-600 text-xs px-2 py-1 rounded hover:bg-red-50"
-                          >
-                            削除
-                          </button>
+                          <button onClick={() => handleDeleteDoctor(doc.id, doc.name)} className="text-red-400 hover:text-red-600 text-xs px-2 py-1 rounded hover:bg-red-50">削除</button>
                         </td>
                       </tr>
                     );
@@ -290,26 +288,19 @@ export default function AdminPage() {
               当直表を自動生成
             </button>
             {schedule && (
-              <button
-                onClick={handleResetSchedule}
-                className="border border-red-300 text-red-500 px-5 py-3 rounded-lg font-medium hover:bg-red-50"
-              >
+              <button onClick={handleResetSchedule} className="border border-red-300 text-red-500 px-5 py-3 rounded-lg font-medium hover:bg-red-50">
                 当直表をリセット
               </button>
             )}
           </div>
-          <p className="text-xs text-gray-400 mt-2">
-            生成すると前月繰り越しが今月の目標に反映されます。翌月への繰り越しも自動計算されます。
-          </p>
+          <p className="text-xs text-gray-400 mt-2">生成すると前月繰り越しが反映されます。翌月への繰り越しも自動計算されます。</p>
         </div>
 
         {/* 警告 */}
         {warnings.length > 0 && (
           <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4">
             <h3 className="font-semibold text-yellow-800 mb-2">⚠️ 調整が必要な項目</h3>
-            <ul className="text-sm text-yellow-700 space-y-1">
-              {warnings.map((w, i) => <li key={i}>• {w}</li>)}
-            </ul>
+            <ul className="text-sm text-yellow-700 space-y-1">{warnings.map((w, i) => <li key={i}>• {w}</li>)}</ul>
           </div>
         )}
 
@@ -328,26 +319,13 @@ export default function AdminPage() {
               {viewMode === "calendar" ? (
                 <Calendar year={year} month={month} assignments={schedule.assignments} customHolidays={customHolidays} />
               ) : (
-                <ScheduleTable
-                  assignments={schedule.assignments}
-                  doctors={doctors}
-                  customHolidays={customHolidays}
-                  onChangeDayshift={handleChangeDayshift}
-                  onChangeOncall={handleChangeOncall}
-                  editable={true}
-                />
+                <ScheduleTable assignments={schedule.assignments} doctors={doctors} customHolidays={customHolidays} onChangeDayshift={handleChangeDayshift} onChangeOncall={handleChangeOncall} editable={true} />
               )}
             </div>
-
             {doctors.length > 0 && (
               <div className="bg-white rounded-xl shadow-sm p-6">
                 <h2 className="font-semibold text-gray-700 mb-4">コマ数カウント</h2>
-                <UnitCountChart
-                  doctors={doctors}
-                  unitCounts={schedule.unitCounts}
-                  weekendHolidayCounts={schedule.weekendHolidayCounts ?? {}}
-                  carryover={carryover}
-                />
+                <UnitCountChart doctors={doctors} unitCounts={schedule.unitCounts} weekendHolidayCounts={schedule.weekendHolidayCounts ?? {}} carryover={carryover} />
               </div>
             )}
           </>

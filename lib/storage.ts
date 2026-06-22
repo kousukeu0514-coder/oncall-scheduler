@@ -1,74 +1,37 @@
+import { supabase } from "./supabase";
 import { Doctor, Schedule, CustomHoliday, Carryover } from "./types";
 
-const ONE_YEAR_MS = 365 * 24 * 60 * 60 * 1000;
+// ─── helpers ───────────────────────────────────────────────────────────────
 
-function periodKey(prefix: string, year: number, month: number): string {
-  return `${prefix}:${year}-${month}`;
+function ONE_YEAR_FROM_NOW(): string {
+  return new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
 }
 
-// Remove all entries older than 1 year
-export function purgeExpiredData(): void {
-  if (typeof window === "undefined") return;
-  const now = Date.now();
-  const keysToDelete: string[] = [];
-  for (let i = 0; i < localStorage.length; i++) {
-    const key = localStorage.key(i);
-    if (!key) continue;
-    try {
-      const raw = localStorage.getItem(key);
-      if (!raw) continue;
-      const data = JSON.parse(raw);
-      if (data.expiresAt && new Date(data.expiresAt).getTime() < now) {
-        keysToDelete.push(key);
-      }
-      // For arrays, check first element
-      if (Array.isArray(data) && data[0]?.expiresAt && new Date(data[0].expiresAt).getTime() < now) {
-        keysToDelete.push(key);
-      }
-    } catch {
-      // ignore parse errors
-    }
-  }
-  keysToDelete.forEach((k) => localStorage.removeItem(k));
+// ─── Doctor ────────────────────────────────────────────────────────────────
+
+export async function loadDoctors(year: number, month: number): Promise<Doctor[]> {
+  const { data, error } = await supabase
+    .from("doctors")
+    .select("*")
+    .eq("period_year", year)
+    .eq("period_month", month)
+    .gt("expires_at", new Date().toISOString());
+  if (error) { console.error(error); return []; }
+  return (data ?? []).map(rowToDoctor);
 }
 
-// Doctors
-export function saveDoctors(year: number, month: number, doctors: Doctor[]): void {
-  const key = periodKey("doctors", year, month);
-  localStorage.setItem(key, JSON.stringify(doctors));
+export async function saveDoctor(year: number, month: number, doctor: Doctor): Promise<void> {
+  const row = doctorToRow(doctor, year, month);
+  const { error } = await supabase.from("doctors").upsert(row, { onConflict: "id" });
+  if (error) console.error(error);
 }
 
-export function loadDoctors(year: number, month: number): Doctor[] {
-  if (typeof window === "undefined") return [];
-  const raw = localStorage.getItem(periodKey("doctors", year, month));
-  if (!raw) return [];
-  try {
-    const doctors: Doctor[] = JSON.parse(raw);
-    const now = Date.now();
-    return doctors.filter((d) => !d.expiresAt || new Date(d.expiresAt).getTime() > now);
-  } catch {
-    return [];
-  }
-}
-
-export function deleteDoctor(year: number, month: number, doctorId: string): void {
-  const doctors = loadDoctors(year, month);
-  saveDoctors(year, month, doctors.filter((d) => d.id !== doctorId));
-}
-
-export function saveDoctor(year: number, month: number, doctor: Doctor): void {
-  const doctors = loadDoctors(year, month);
-  const idx = doctors.findIndex((d) => d.id === doctor.id);
-  if (idx >= 0) {
-    doctors[idx] = doctor;
-  } else {
-    doctors.push(doctor);
-  }
-  saveDoctors(year, month, doctors);
+export async function deleteDoctor(year: number, month: number, doctorId: string): Promise<void> {
+  const { error } = await supabase.from("doctors").delete().eq("id", doctorId);
+  if (error) console.error(error);
 }
 
 export function createDoctor(name: string, year: number, month: number): Doctor {
-  const now = new Date();
   return {
     id: crypto.randomUUID(),
     name,
@@ -77,67 +40,133 @@ export function createDoctor(name: string, year: number, month: number): Doctor 
     hasChildcare: null,
     unavailableDates: { oncall: [], dayshift: [] },
     targetPeriod: { startYear: year, startMonth: month },
-    savedAt: now.toISOString(),
-    expiresAt: new Date(now.getTime() + ONE_YEAR_MS).toISOString(),
+    savedAt: new Date().toISOString(),
+    expiresAt: ONE_YEAR_FROM_NOW(),
   };
 }
 
-// Schedule
-export function deleteSchedule(year: number, month: number): void {
-  localStorage.removeItem(periodKey("schedule", year, month));
+function rowToDoctor(row: Record<string, unknown>): Doctor {
+  return {
+    id: row.id as string,
+    name: row.name as string,
+    yearsOfExperience: row.years_of_experience as number | null,
+    isRotating: row.is_rotating as boolean | null,
+    hasChildcare: row.has_childcare as boolean | null,
+    unavailableDates: {
+      oncall: (row.unavailable_oncall as string[]) ?? [],
+      dayshift: (row.unavailable_dayshift as string[]) ?? [],
+    },
+    targetPeriod: { startYear: row.period_year as number, startMonth: row.period_month as number },
+    savedAt: row.saved_at as string,
+    expiresAt: row.expires_at as string,
+  };
 }
 
-export function saveSchedule(year: number, month: number, schedule: Schedule): void {
-  const key = periodKey("schedule", year, month);
-  localStorage.setItem(key, JSON.stringify(schedule));
+function doctorToRow(doc: Doctor, year: number, month: number) {
+  return {
+    id: doc.id,
+    name: doc.name,
+    years_of_experience: doc.yearsOfExperience,
+    is_rotating: doc.isRotating,
+    has_childcare: doc.hasChildcare,
+    unavailable_oncall: doc.unavailableDates.oncall,
+    unavailable_dayshift: doc.unavailableDates.dayshift,
+    period_year: year,
+    period_month: month,
+    saved_at: doc.savedAt,
+    expires_at: doc.expiresAt,
+  };
 }
 
-export function loadSchedule(year: number, month: number): Schedule | null {
-  if (typeof window === "undefined") return null;
-  const raw = localStorage.getItem(periodKey("schedule", year, month));
-  if (!raw) return null;
-  try {
-    return JSON.parse(raw) as Schedule;
-  } catch {
-    return null;
-  }
+// ─── Schedule ──────────────────────────────────────────────────────────────
+
+export async function loadSchedule(year: number, month: number): Promise<Schedule | null> {
+  const { data, error } = await supabase
+    .from("schedules")
+    .select("*")
+    .eq("period_year", year)
+    .eq("period_month", month)
+    .maybeSingle();
+  if (error) { console.error(error); return null; }
+  if (!data) return null;
+  return {
+    period: { startYear: data.period_year, startMonth: data.period_month },
+    assignments: data.assignments,
+    unitCounts: data.unit_counts,
+    weekendHolidayCounts: data.weekend_holiday_counts ?? {},
+    savedAt: data.saved_at,
+  };
 }
 
-// Carryover（前月繰り越し）
-export function saveCarryover(year: number, month: number, carryover: Carryover): void {
-  const key = periodKey("carryover", year, month);
-  localStorage.setItem(key, JSON.stringify(carryover));
+export async function saveSchedule(year: number, month: number, schedule: Schedule): Promise<void> {
+  const { error } = await supabase.from("schedules").upsert({
+    period_year: year,
+    period_month: month,
+    assignments: schedule.assignments,
+    unit_counts: schedule.unitCounts,
+    weekend_holiday_counts: schedule.weekendHolidayCounts,
+    saved_at: schedule.savedAt,
+  }, { onConflict: "period_year,period_month" });
+  if (error) console.error(error);
 }
 
-export function loadCarryover(year: number, month: number): Carryover {
-  if (typeof window === "undefined") return {};
-  const raw = localStorage.getItem(periodKey("carryover", year, month));
-  if (!raw) return {};
-  try {
-    return JSON.parse(raw) as Carryover;
-  } catch {
-    return {};
-  }
+export async function deleteSchedule(year: number, month: number): Promise<void> {
+  const { error } = await supabase.from("schedules")
+    .delete()
+    .eq("period_year", year)
+    .eq("period_month", month);
+  if (error) console.error(error);
 }
 
-// 前の月のキーを返す
+// ─── Custom Holidays ───────────────────────────────────────────────────────
+
+export async function loadCustomHolidays(year: number, month: number): Promise<CustomHoliday[]> {
+  const { data, error } = await supabase
+    .from("custom_holidays")
+    .select("date, label")
+    .eq("period_year", year)
+    .eq("period_month", month);
+  if (error) { console.error(error); return []; }
+  return (data ?? []) as CustomHoliday[];
+}
+
+export async function saveCustomHolidays(year: number, month: number, holidays: CustomHoliday[]): Promise<void> {
+  // 全削除して再挿入
+  await supabase.from("custom_holidays").delete().eq("period_year", year).eq("period_month", month);
+  if (holidays.length === 0) return;
+  const rows = holidays.map((h) => ({ period_year: year, period_month: month, date: h.date, label: h.label }));
+  const { error } = await supabase.from("custom_holidays").insert(rows);
+  if (error) console.error(error);
+}
+
+// ─── Carryover ─────────────────────────────────────────────────────────────
+
+export async function loadCarryover(year: number, month: number): Promise<Carryover> {
+  const { data, error } = await supabase
+    .from("carryovers")
+    .select("data")
+    .eq("period_year", year)
+    .eq("period_month", month)
+    .maybeSingle();
+  if (error) { console.error(error); return {}; }
+  return (data?.data as Carryover) ?? {};
+}
+
+export async function saveCarryover(year: number, month: number, carryover: Carryover): Promise<void> {
+  const { error } = await supabase.from("carryovers").upsert({
+    period_year: year,
+    period_month: month,
+    data: carryover,
+  }, { onConflict: "period_year,period_month" });
+  if (error) console.error(error);
+}
+
+// ─── Helpers ───────────────────────────────────────────────────────────────
+
 export function prevMonth(year: number, month: number): { year: number; month: number } {
   return month === 1 ? { year: year - 1, month: 12 } : { year, month: month - 1 };
 }
 
-// Custom Holidays
-export function saveCustomHolidays(year: number, month: number, holidays: CustomHoliday[]): void {
-  const key = periodKey("custom-holidays", year, month);
-  localStorage.setItem(key, JSON.stringify(holidays));
-}
-
-export function loadCustomHolidays(year: number, month: number): CustomHoliday[] {
-  if (typeof window === "undefined") return [];
-  const raw = localStorage.getItem(periodKey("custom-holidays", year, month));
-  if (!raw) return [];
-  try {
-    return JSON.parse(raw) as CustomHoliday[];
-  } catch {
-    return [];
-  }
+export function purgeExpiredData(): void {
+  // Supabaseでは expires_at > now() のフィルタで自動除外。手動削除不要。
 }
