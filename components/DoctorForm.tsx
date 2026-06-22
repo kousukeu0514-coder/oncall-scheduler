@@ -180,7 +180,7 @@ export default function DoctorForm({ doctor, onChange, onSave, customHolidays = 
         <select
           value={doctor.yearsOfExperience ?? ""}
           onChange={(e) => onChange({ ...doctor, yearsOfExperience: e.target.value === "" ? null : Number(e.target.value) })}
-          className={`w-full border rounded px-3 py-2 ${doctor.yearsOfExperience === null ? "border-red-300 bg-red-50" : ""}`}
+          className={`w-full border rounded px-3 py-2 text-gray-800 bg-white ${doctor.yearsOfExperience === null ? "border-red-300 bg-red-50" : ""}`}
         >
           <option value="">-- 選択してください --</option>
           {yearOptions.map((y) => (
@@ -203,7 +203,7 @@ export default function DoctorForm({ doctor, onChange, onSave, customHolidays = 
             { value: true, label: "他科ローテ中（目標単位数が半分）" },
           ].map(({ value, label }) => (
             <label key={String(value)} className={`flex items-center gap-2 cursor-pointer px-4 py-2 rounded-lg border transition-colors ${
-              doctor.isRotating === value ? "bg-blue-50 border-blue-400 text-blue-700" : "border-gray-300 hover:bg-gray-50"
+              doctor.isRotating === value ? "bg-blue-50 border-blue-400 text-blue-700" : "border-gray-300 hover:bg-gray-50 text-gray-800"
             }`}>
               <input
                 type="radio"
@@ -232,7 +232,7 @@ export default function DoctorForm({ doctor, onChange, onSave, customHolidays = 
             { value: true, label: "日直のみ対応可（当直は割り当てない）" },
           ].map(({ value, label }) => (
             <label key={String(value)} className={`flex items-center gap-2 cursor-pointer px-4 py-2 rounded-lg border transition-colors ${
-              doctor.hasChildcare === value ? "bg-blue-50 border-blue-400 text-blue-700" : "border-gray-300 hover:bg-gray-50"
+              doctor.hasChildcare === value ? "bg-blue-50 border-blue-400 text-blue-700" : "border-gray-300 hover:bg-gray-50 text-gray-800"
             }`}>
               <input
                 type="radio"
