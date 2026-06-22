@@ -59,7 +59,11 @@ export function generateSchedule(
         return true;
       });
 
-      const chosen = pickBest(candidates, "dayshift");
+      // 日直のみ医師を優先（目標未達の場合）
+      const childcareCandidates = candidates.filter(
+        (s) => s.doctor.hasChildcare === true && s.accumulated < s.target
+      );
+      const chosen = pickBest(childcareCandidates.length > 0 ? childcareCandidates : candidates, "dayshift");
       if (chosen) {
         assignment.dayshift = chosen.doctor.name;
         chosen.accumulated += getShiftUnits(dayType, "dayshift");
