@@ -103,8 +103,8 @@ export default function DoctorForm({ doctor, onChange, onSave, customHolidays = 
                   key={ds}
                   onClick={() => onToggle(ds)}
                   className={`px-1 py-1 rounded text-xs border transition-colors ${
-                    isSel ? `${selectedClass} text-white` : `bg-white border-gray-200 hover:bg-gray-50`
-                  } ${!isSel ? getDateClass(ds) : ""}`}
+                    isSel ? `${selectedClass} text-white` : `bg-white border-gray-200 hover:bg-gray-50 ${getDateClass(ds) || "text-gray-800"}`
+                  }`}
                 >
                   {day}
                 </button>
@@ -152,7 +152,7 @@ export default function DoctorForm({ doctor, onChange, onSave, customHolidays = 
                   key={ds}
                   onClick={() => toggleDate("oncall", ds)}
                   className={`px-1 py-1 rounded text-xs border transition-colors ${
-                    isSel ? "bg-red-500 border-red-500 text-white" : `bg-white border-gray-200 hover:bg-gray-50 ${dow === 0 ? "text-red-500" : dow === 6 ? "text-blue-500" : ""}`
+                    isSel ? "bg-red-500 border-red-500 text-white" : `bg-white border-gray-200 hover:bg-gray-50 ${dow === 0 ? "text-red-500" : dow === 6 ? "text-blue-500" : "text-gray-800"}`
                   }`}
                 >
                   {day}

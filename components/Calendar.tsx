@@ -71,10 +71,10 @@ export default function Calendar({ year, month, assignments, customHolidays, onC
                       {isCustomHoliday && <span className="ml-1 text-pink-500 text-[10px]">★</span>}
                     </div>
                     {a?.dayshift && (
-                      <div className="bg-yellow-100 rounded px-1 mb-0.5 truncate">日:{a.dayshift}</div>
+                      <div className="bg-yellow-100 rounded px-1 mb-0.5 truncate text-gray-800">日:{a.dayshift}</div>
                     )}
                     {a?.oncall && (
-                      <div className="bg-blue-50 rounded px-1 truncate">当:{a.oncall}</div>
+                      <div className="bg-blue-50 rounded px-1 truncate text-gray-800">当:{a.oncall}</div>
                     )}
                   </div>
                 );
