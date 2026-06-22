@@ -112,14 +112,14 @@ export default function DoctorPage() {
               <select
                 value={startYear}
                 onChange={(e) => setStartYear(Number(e.target.value))}
-                className="border rounded-lg px-3 py-2 bg-white"
+                className="border rounded-lg px-3 py-2 bg-white text-gray-800"
               >
                 {yearOptions.map((y) => <option key={y} value={y}>{y}年</option>)}
               </select>
               <select
                 value={startMonth}
                 onChange={(e) => setStartMonth(Number(e.target.value))}
-                className="border rounded-lg px-3 py-2 bg-white"
+                className="border rounded-lg px-3 py-2 bg-white text-gray-800"
               >
                 {monthOptions.map((m) => <option key={m} value={m}>{m}月</option>)}
               </select>

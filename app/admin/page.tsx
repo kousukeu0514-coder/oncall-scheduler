@@ -192,12 +192,12 @@ export default function AdminPage() {
         <div className="bg-white rounded-xl shadow-sm p-6">
           <h2 className="font-semibold text-gray-700 mb-4">対象月</h2>
           <div className="flex gap-2 items-center flex-wrap">
-            <select value={year} onChange={(e) => setYear(Number(e.target.value))} className="border rounded px-3 py-2">
+            <select value={year} onChange={(e) => setYear(Number(e.target.value))} className="border rounded px-3 py-2 text-gray-800 bg-white">
               {[NOW.getFullYear() - 1, NOW.getFullYear(), NOW.getFullYear() + 1].map((y) => (
                 <option key={y} value={y}>{y}年</option>
               ))}
             </select>
-            <select value={month} onChange={(e) => setMonth(Number(e.target.value))} className="border rounded px-3 py-2">
+            <select value={month} onChange={(e) => setMonth(Number(e.target.value))} className="border rounded px-3 py-2 text-gray-800 bg-white">
               {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
                 <option key={m} value={m}>{m}月</option>
               ))}
@@ -229,8 +229,45 @@ export default function AdminPage() {
           ) : doctors.length === 0 ? (
             <p className="text-gray-400 text-sm">この月の医師データがありません。</p>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+            {/* モバイル：カード表示 */}
+            <div className="space-y-3 md:hidden">
+              {doctors.map((doc) => {
+                const base = getTargetUnits(doc.yearsOfExperience ?? 3);
+                const baseTarget = doc.isRotating ? getRotatingTarget(base) : base;
+                const carry = carryover[doc.name] ?? 0;
+                const adjusted = Math.max(0.5, Math.round((baseTarget - carry) * 2) / 2);
+                const completed = doc.yearsOfExperience != null && doc.isRotating != null && doc.hasChildcare != null;
+                return (
+                  <div key={doc.id} className="border rounded-lg p-3 text-sm text-gray-800">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="font-bold text-base">{doc.name}</span>
+                      <div className="flex items-center gap-2">
+                        <span className={`px-2 py-0.5 rounded-full text-xs ${completed ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"}`}>
+                          {completed ? "入力済" : "未完了"}
+                        </span>
+                        <button onClick={() => handleDeleteDoctor(doc.id, doc.name)} className="text-red-500 text-xs px-2 py-1 rounded border border-red-200">削除</button>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+                      <span className="text-gray-500">年限</span><span>{doc.yearsOfExperience != null ? `${doc.yearsOfExperience}年目` : "—"}</span>
+                      <span className="text-gray-500">ローテ</span><span>{doc.isRotating == null ? "—" : doc.isRotating ? "他科" : "当科"}</span>
+                      <span className="text-gray-500">日直のみ</span><span>{doc.hasChildcare == null ? "—" : doc.hasChildcare ? "はい" : "—"}</span>
+                      <span className="text-gray-500">基本目標</span><span>{baseTarget}単位</span>
+                      <span className="text-gray-500">今月目標</span>
+                      <span className="font-medium">
+                        {adjusted}単位
+                        {carry !== 0 && <span className={`ml-1 text-xs ${carry > 0 ? "text-orange-500" : "text-green-600"}`}>({carry > 0 ? "-" : "+"}{Math.abs(carry)})</span>}
+                      </span>
+                      <span className="text-gray-500">当直不可</span><span>{doc.unavailableDates.oncall.length}日</span>
+                      <span className="text-gray-500">日直不可</span><span>{doc.unavailableDates.dayshift.length}日</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            {/* PC：テーブル表示 */}
+            <div className="overflow-x-auto hidden md:block">
+              <table className="w-full text-sm text-gray-800">
                 <thead>
                   <tr className="bg-gray-50 text-left">
                     <th className="px-3 py-2">氏名</th>
