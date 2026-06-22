@@ -229,6 +229,7 @@ export default function AdminPage() {
           ) : doctors.length === 0 ? (
             <p className="text-gray-400 text-sm">この月の医師データがありません。</p>
           ) : (
+            <>
             {/* モバイル：カード表示 */}
             <div className="space-y-3 md:hidden">
               {doctors.map((doc) => {
@@ -321,6 +322,7 @@ export default function AdminPage() {
                 </tbody>
               </table>
             </div>
+            </>
           )}
         </div>
 
