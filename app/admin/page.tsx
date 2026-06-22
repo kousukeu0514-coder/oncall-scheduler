@@ -121,6 +121,14 @@ export default function AdminPage() {
   async function handleDeleteDoctor(doctorId: string, doctorName: string) {
     if (!confirm(`「${doctorName}」のデータを削除しますか？`)) return;
     await deleteDoctor(year, month, doctorId);
+    const prev = prevMonth(year, month);
+    const prevCarry = await loadCarryover(prev.year, prev.month);
+    if (doctorName in prevCarry) {
+      const updated = { ...prevCarry };
+      delete updated[doctorName];
+      await saveCarryover(prev.year, prev.month, updated);
+      setCarryover(updated);
+    }
     setDoctors(await loadDoctors(year, month));
   }
 
