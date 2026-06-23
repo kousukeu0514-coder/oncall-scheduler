@@ -2,7 +2,7 @@ export interface Doctor {
   id: string;
   name: string;
   yearsOfExperience: number | null;  // null = 未選択
-  isRotating: boolean | null;        // null = 未選択
+  isRotating: "own" | "emergency" | "other" | null; // null=未選択, own=当科, emergency=救急, other=その他
   hasChildcare: boolean | null;      // null = 未選択
   unavailableDates: {
     oncall: string[];

@@ -197,19 +197,20 @@ export default function DoctorForm({ doctor, onChange, onSave, customHolidays = 
         <label className="block text-sm font-medium text-gray-700 mb-2">
           ローテーション状況<span className="text-red-500 ml-1">*</span>
         </label>
-        <div className="flex gap-3">
+        <div className="flex flex-col gap-2">
           {[
-            { value: false, label: "当科ローテ中" },
-            { value: true, label: "他科ローテ中（目標単位数が半分）" },
+            { value: "own", label: "当科ローテ中" },
+            { value: "emergency", label: "他科ローテ中（救急）－2単位" },
+            { value: "other", label: "他科ローテ中（その他）－0.5単位" },
           ].map(({ value, label }) => (
-            <label key={String(value)} className={`flex items-center gap-2 cursor-pointer px-4 py-2 rounded-lg border transition-colors ${
+            <label key={value} className={`flex items-center gap-2 cursor-pointer px-4 py-2 rounded-lg border transition-colors ${
               doctor.isRotating === value ? "bg-blue-50 border-blue-400 text-blue-700" : "border-gray-300 hover:bg-gray-50 text-gray-800"
             }`}>
               <input
                 type="radio"
                 name="isRotating"
                 checked={doctor.isRotating === value}
-                onChange={() => onChange({ ...doctor, isRotating: value })}
+                onChange={() => onChange({ ...doctor, isRotating: value as "own" | "emergency" | "other" })}
                 className="w-4 h-4"
               />
               <span className="text-sm">{label}</span>

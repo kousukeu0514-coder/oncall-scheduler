@@ -8,7 +8,7 @@ import {
   loadCarryover, saveCarryover, prevMonth, purgeExpiredData, deleteDoctor,
 } from "@/lib/storage";
 import { generateSchedule } from "@/lib/scheduler";
-import { getTargetUnits, getRotatingTarget, getShiftUnits } from "@/lib/holidays";
+import { getTargetUnits, getAdjustedTarget, getShiftUnits } from "@/lib/holidays";
 import Calendar from "@/components/Calendar";
 import ScheduleTable from "@/components/ScheduleTable";
 import UnitCountChart from "@/components/UnitCountChart";
@@ -234,7 +234,7 @@ export default function AdminPage() {
             <div className="space-y-3 md:hidden">
               {doctors.map((doc) => {
                 const base = getTargetUnits(doc.yearsOfExperience ?? 3);
-                const baseTarget = doc.isRotating ? getRotatingTarget(base) : base;
+                const baseTarget = getAdjustedTarget(base, doc.isRotating);
                 const carry = carryover[doc.name] ?? 0;
                 const adjusted = doc.hasChildcare === true ? 2 : Math.max(0.5, Math.round((baseTarget - carry) * 2) / 2);
                 const completed = doc.yearsOfExperience != null && doc.isRotating != null && doc.hasChildcare != null;
@@ -251,7 +251,7 @@ export default function AdminPage() {
                     </div>
                     <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
                       <span className="text-gray-500">年限</span><span>{doc.yearsOfExperience != null ? `${doc.yearsOfExperience}年目` : "—"}</span>
-                      <span className="text-gray-500">ローテ</span><span>{doc.isRotating == null ? "—" : doc.isRotating ? "他科" : "当科"}</span>
+                      <span className="text-gray-500">ローテ</span><span>{doc.isRotating == null ? "—" : doc.isRotating === "emergency" ? "救急" : doc.isRotating === "other" ? "他科" : "当科"}</span>
                       <span className="text-gray-500">日直のみ</span><span>{doc.hasChildcare == null ? "—" : doc.hasChildcare ? "はい" : "—"}</span>
                       <span className="text-gray-500">基本目標</span><span>{baseTarget}単位</span>
                       <span className="text-gray-500">今月目標</span>
@@ -286,14 +286,14 @@ export default function AdminPage() {
                 <tbody>
                   {doctors.map((doc) => {
                     const base = getTargetUnits(doc.yearsOfExperience ?? 3);
-                    const baseTarget = doc.isRotating ? getRotatingTarget(base) : base;
+                    const baseTarget = getAdjustedTarget(base, doc.isRotating);
                     const carry = carryover[doc.name] ?? 0;
                     const adjusted = doc.hasChildcare === true ? 2 : Math.max(0.5, Math.round((baseTarget - carry) * 2) / 2);
                     return (
                       <tr key={doc.id} className="border-b">
                         <td className="px-3 py-2 font-medium">{doc.name}</td>
                         <td className="px-3 py-2">{doc.yearsOfExperience != null ? `${doc.yearsOfExperience}年目` : "—"}</td>
-                        <td className="px-3 py-2 text-center">{doc.isRotating == null ? "—" : doc.isRotating ? "他科" : "当科"}</td>
+                        <td className="px-3 py-2 text-center">{doc.isRotating == null ? "—" : doc.isRotating === "emergency" ? "救急" : doc.isRotating === "other" ? "他科" : "当科"}</td>
                         <td className="px-3 py-2 text-center">{doc.hasChildcare == null ? "—" : doc.hasChildcare ? "✓" : "—"}</td>
                         <td className="px-3 py-2 text-center">{baseTarget}</td>
                         <td className="px-3 py-2 text-center font-medium">

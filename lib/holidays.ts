@@ -82,9 +82,11 @@ export function getTargetUnits(yearsOfExperience: number): number {
   return 1.5;
 }
 
-// 他科ローテ中の目標単位数（半分・切り上げ、0.5単位刻みで切り上げ）
-export function getRotatingTarget(base: number): number {
-  return Math.ceil(base / 2 * 2) / 2; // 0.5単位刻みで切り上げ
+// ローテーション種別に応じた目標単位数調整
+export function getAdjustedTarget(base: number, isRotating: string | null): number {
+  if (isRotating === "emergency") return Math.max(0.5, base - 2);
+  if (isRotating === "other") return Math.max(0.5, base - 0.5);
+  return base; // "own" または null（当科）
 }
 
 export function getDatesInPeriod(year: number, month: number): Date[] {

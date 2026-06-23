@@ -4,7 +4,7 @@ import {
   getDayType,
   getShiftUnits,
   getTargetUnits,
-  getRotatingTarget,
+  getAdjustedTarget,
   toDateString,
   isWeekendOrHoliday,
 } from "./holidays";
@@ -28,10 +28,17 @@ export function generateSchedule(
   const assignments: Assignment[] = [];
   const warnings: string[] = [];
 
+  const SAT_PREFIX = "__sat__";
+  const satLastMonth = new Set<string>(
+    Object.entries(carryover)
+      .filter(([k, v]) => k.startsWith(SAT_PREFIX) && v === 1)
+      .map(([k]) => k.slice(SAT_PREFIX.length))
+  );
+  const satThisMonth = new Set<string>();
+
   const states: DoctorState[] = doctors.map((doc) => {
     const base = getTargetUnits(doc.yearsOfExperience ?? 3);
-    const baseTarget = doc.isRotating ? getRotatingTarget(base) : base;
-    // キャリーオーバー調整：前月過剰分を今月の目標から引く（0.5単位刻み）
+    const baseTarget = getAdjustedTarget(base, doc.isRotating);
     const carry = carryover[doc.name] ?? 0;
     const adjusted = baseTarget - carry;
     // 日直のみ対応は繰り越し関係なく常に2単位固定、それ以外は最低0.5単位確保
@@ -85,11 +92,26 @@ export function generateSchedule(
         return true;
       });
 
-      const chosen = pickBest(candidates, "oncall");
+      // 土曜当直（1.5単位）は2か月に1回制限：前月・今月すでに割り当て済みの医師を除外
+      let oncallCandidates = candidates;
+      if (dayType === "saturday") {
+        const preferred = candidates.filter(
+          (s) => !satLastMonth.has(s.doctor.name) && !satThisMonth.has(s.doctor.name)
+        );
+        if (preferred.length > 0) oncallCandidates = preferred;
+        else {
+          // 前月分だけ除外（今月はどうしても必要な場合）
+          const fallback = candidates.filter((s) => !satThisMonth.has(s.doctor.name));
+          if (fallback.length > 0) oncallCandidates = fallback;
+        }
+      }
+
+      const chosen = pickBest(oncallCandidates, "oncall");
       if (chosen) {
         assignment.oncall = chosen.doctor.name;
         chosen.accumulated += getShiftUnits(dayType, "oncall");
         if (isWH) chosen.weekendHolidayCount++;
+        if (dayType === "saturday") satThisMonth.add(chosen.doctor.name);
       } else {
         warnings.push(`${dateStr} 当直: 割り当て可能な医師がいません`);
       }
@@ -115,8 +137,11 @@ export function generateSchedule(
   states.forEach((s) => {
     unitCounts[s.doctor.name] = s.accumulated;
     weekendHolidayCounts[s.doctor.name] = s.weekendHolidayCount;
-    // 今月の実績 - 基本目標 = 来月への繰り越し（プラスなら過剰、マイナスなら不足）
     newCarryover[s.doctor.name] = Math.round((s.accumulated - s.baseTarget) * 10) / 10;
+  });
+  // 土曜当直をした医師を来月のcarryoverに記録
+  satThisMonth.forEach((name) => {
+    newCarryover[`${SAT_PREFIX}${name}`] = 1;
   });
 
   const schedule: Schedule = {

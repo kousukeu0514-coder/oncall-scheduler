@@ -50,7 +50,7 @@ function rowToDoctor(row: Record<string, unknown>): Doctor {
     id: row.id as string,
     name: row.name as string,
     yearsOfExperience: row.years_of_experience as number | null,
-    isRotating: row.is_rotating as boolean | null,
+    isRotating: row.is_rotating as "own" | "emergency" | "other" | null,
     hasChildcare: row.has_childcare as boolean | null,
     unavailableDates: {
       oncall: (row.unavailable_oncall as string[]) ?? [],
