@@ -60,7 +60,7 @@ export function getShiftUnits(dayType: DayType, shift: "dayshift" | "oncall"): n
     // oncall
     if (dayType === "weekday") return 1.0;
     if (dayType === "saturday") return 1.5;
-    if (dayType === "second-saturday") return 1.5;
+    if (dayType === "second-saturday") return 1.0;
     if (dayType === "holiday") return 1.0;
     return 0;
   }
