@@ -113,7 +113,10 @@ export default function AdminPage() {
 
   async function handleResetSchedule() {
     if (!confirm("当直表をリセットしますか？手動での修正内容も消えます。")) return;
-    await deleteSchedule(year, month);
+    await Promise.all([
+      deleteSchedule(year, month),
+      saveCarryover(year, month, {}),
+    ]);
     setSchedule(null);
     setWarnings([]);
   }
@@ -203,14 +206,16 @@ export default function AdminPage() {
               ))}
             </select>
           </div>
-          {Object.keys(carryover).length > 0 && (
+          {Object.entries(carryover).some(([k]) => !k.startsWith("__sat__")) && (
             <div className="mt-3 p-3 bg-blue-50 rounded-lg text-xs text-blue-700">
               <span className="font-medium">前月（{prev.year}年{prev.month}月）からの繰り越し: </span>
-              {Object.entries(carryover).map(([name, v]) => (
-                <span key={name} className={`mr-3 ${v > 0 ? "text-orange-600" : "text-green-700"}`}>
-                  {name}: {v > 0 ? "+" : ""}{v}単位
-                </span>
-              ))}
+              {Object.entries(carryover)
+                .filter(([k]) => !k.startsWith("__sat__"))
+                .map(([name, v]) => (
+                  <span key={name} className={`mr-3 ${v > 0 ? "text-orange-600" : "text-green-700"}`}>
+                    {name}: {v > 0 ? "+" : ""}{v}単位
+                  </span>
+                ))}
             </div>
           )}
         </div>
