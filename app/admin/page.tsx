@@ -124,13 +124,24 @@ export default function AdminPage() {
   async function handleDeleteDoctor(doctorId: string, doctorName: string) {
     if (!confirm(`「${doctorName}」のデータを削除しますか？`)) return;
     await deleteDoctor(year, month, doctorId);
+    // 前月の繰り越しから該当ドクターを削除（当月表示に反映される繰り越し）
     const prev = prevMonth(year, month);
     const prevCarry = await loadCarryover(prev.year, prev.month);
-    if (doctorName in prevCarry) {
+    const satKey = `__sat__${doctorName}`;
+    if (doctorName in prevCarry || satKey in prevCarry) {
       const updated = { ...prevCarry };
       delete updated[doctorName];
+      delete updated[satKey];
       await saveCarryover(prev.year, prev.month, updated);
       setCarryover(updated);
+    }
+    // 当月の繰り越し（翌月表示に反映される）からも削除
+    const currCarry = await loadCarryover(year, month);
+    if (doctorName in currCarry || `__sat__${doctorName}` in currCarry) {
+      const updated = { ...currCarry };
+      delete updated[doctorName];
+      delete updated[`__sat__${doctorName}`];
+      await saveCarryover(year, month, updated);
     }
     setDoctors(await loadDoctors(year, month));
   }
