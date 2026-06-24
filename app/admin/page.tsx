@@ -220,13 +220,26 @@ export default function AdminPage() {
           {Object.entries(carryover).some(([k]) => !k.startsWith("__sat__")) && (
             <div className="mt-3 p-3 bg-blue-50 rounded-lg text-xs text-blue-700">
               <span className="font-medium">前月（{prev.year}年{prev.month}月）からの繰り越し: </span>
-              {Object.entries(carryover)
-                .filter(([k]) => !k.startsWith("__sat__"))
-                .map(([name, v]) => (
-                  <span key={name} className={`mr-3 ${v > 0 ? "text-orange-600" : "text-green-700"}`}>
-                    {name}: {v > 0 ? "+" : ""}{v}単位
-                  </span>
-                ))}
+              <div className="flex flex-wrap gap-2 mt-1">
+                {Object.entries(carryover)
+                  .filter(([k]) => !k.startsWith("__sat__"))
+                  .map(([name, v]) => (
+                    <span key={name} className={`inline-flex items-center gap-1 ${v > 0 ? "text-orange-600" : "text-green-700"}`}>
+                      {name}: {v > 0 ? "+" : ""}{v}単位
+                      <button
+                        onClick={async () => {
+                          const updated = { ...carryover };
+                          delete updated[name];
+                          delete updated[`__sat__${name}`];
+                          await saveCarryover(prev.year, prev.month, updated);
+                          setCarryover(updated);
+                        }}
+                        className="ml-0.5 text-gray-400 hover:text-red-500 font-bold"
+                        title="繰り越しを削除"
+                      >×</button>
+                    </span>
+                  ))}
+              </div>
             </div>
           )}
         </div>
