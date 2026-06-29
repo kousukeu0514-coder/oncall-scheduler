@@ -75,9 +75,15 @@ function applyWeekendFilters(
   );
   if (midJuniorFirst.length > 0) return midJuniorFirst;
 
-  // Step 4: 3-5年目 で週末2回目（入りやすい人から）
+  // Step 4a: 3年目 で週末2回目（必ず2回入れる）
+  const thirdYearSecond = candidates.filter(
+    (s) => years(s) === 3 && s.weekendHolidayCount < 2
+  );
+  if (thirdYearSecond.length > 0) return thirdYearSecond;
+
+  // Step 4b: 4-5年目 で週末2回目
   const earlyJuniorSecond = candidates.filter(
-    (s) => years(s) >= 3 && years(s) <= 5 && s.weekendHolidayCount < 2
+    (s) => years(s) >= 4 && years(s) <= 5 && s.weekendHolidayCount < 2
   );
   if (earlyJuniorSecond.length > 0) return earlyJuniorSecond;
 
