@@ -273,7 +273,9 @@ function sortByRemaining(pool: DoctorState[]): DoctorState[] {
   return [...pool].sort((a, b) => {
     const remainA = a.target - a.accumulated;
     const remainB = b.target - b.accumulated;
-    if (Math.abs(remainB - remainA) > 0.4) return remainB - remainA;
+    // 残り単位数が異なれば必ず多い順（閾値なし）
+    if (remainB !== remainA) return remainB - remainA;
+    // 同じ場合のみ累積土日祝回数で公平性を保つ
     return a.weekendHolidayTotal - b.weekendHolidayTotal;
   });
 }
@@ -286,6 +288,10 @@ function pickBest(candidates: DoctorState[]): DoctorState | null {
     (s) => (s.doctor.yearsOfExperience ?? 0) >= 10 && s.shiftCount === 0 && s.accumulated < s.target
   );
   if (seniorUnassigned.length > 0) return sortByRemaining(seniorUnassigned)[0];
+
+  // 1.0単位以上不足している人を最優先（-1.0超えを防ぐ）
+  const significantlyUnder = candidates.filter((s) => s.target - s.accumulated >= 1.0);
+  if (significantlyUnder.length > 0) return sortByRemaining(significantlyUnder)[0];
 
   // 目標未達を優先（超過させない）
   const underTarget = candidates.filter((s) => s.accumulated < s.target);
