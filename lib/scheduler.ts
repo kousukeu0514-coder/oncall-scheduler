@@ -187,9 +187,10 @@ export function generateSchedule(
         const seniorPool = withSenior.length > 0 ? withSenior : candidates;
         candidates = applyWeekendFilters(seniorPool, gapFiltered, base, dateStr, "日直", warnings);
       } else {
-        // 平日：候補者が少ない（3人以下）場合はシニア制限を外して全員から選ぶ
+        // 平日：若手優先。シニアは未割当（shiftCount=0）のみ候補に入れる（月1回上限を守る）
+        // 候補者が少ない場合もこのフィルターを維持し、上限を超えたシニアは除外
         const withSenior = candidates.filter(isSeniorAllowed);
-        if (withSenior.length > 0 && candidates.length > 3) candidates = withSenior;
+        if (withSenior.length > 0) candidates = withSenior;
       }
 
       // 日直のみ医師：月1回確保を最優先、次に目標未達を優先
@@ -250,9 +251,10 @@ export function generateSchedule(
         const seniorPool = withSenior.length > 0 ? withSenior : candidates;
         candidates = applyWeekendFilters(seniorPool, gapFiltered, base, dateStr, "当直", warnings);
       } else {
-        // 平日：候補者が少ない（3人以下）場合はシニア制限を外して全員から選ぶ
+        // 平日：若手優先。シニアは未割当（shiftCount=0）のみ候補に入れる（月1回上限を守る）
+        // 候補者が少ない場合もこのフィルターを維持し、上限を超えたシニアは除外
         const withSenior = candidates.filter(isSeniorAllowed);
-        if (withSenior.length > 0 && candidates.length > 3) candidates = withSenior;
+        if (withSenior.length > 0) candidates = withSenior;
       }
 
       // 土曜当直は3か月に1回制限（soft）
