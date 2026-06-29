@@ -23,7 +23,7 @@ interface DoctorState {
 
 const SAT_PREFIX = "__sat__";
 const WH_PREFIX = "__wh__";
-const HARD_MAX = 6; // 累積単位数ハードキャップ
+const HARD_MAX = 5.5; // 累積単位数ハードキャップ
 
 function daysBetween(a: string, b: string): number {
   return Math.round(
