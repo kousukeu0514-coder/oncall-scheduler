@@ -18,6 +18,7 @@ interface DoctorState {
   weekendHolidayCount: number;   // 今月の土日祝シフト回数（上限チェック用）
   weekendHolidayTotal: number;   // 累積土日祝回数（繰り越し含む、公平性ソート用）
   lastShiftDate: string | null;
+  lastOncallDate: string | null; // 当直-当直間の中2日soft用
 }
 
 const SAT_PREFIX = "__sat__";
@@ -74,15 +75,15 @@ function applyWeekendFilters(
   );
   if (midJuniorFirst.length > 0) return midJuniorFirst;
 
-  // Step 4: 3-6年目 で週末2回目（3年目→4年目→5年目→6年目の順）
-  for (const yr of [3, 4, 5, 6]) {
-    const pool = candidates.filter((s) => years(s) === yr && s.weekendHolidayCount < 2);
-    if (pool.length > 0) return pool;
-  }
+  // Step 4: 3-5年目 で週末2回目（入りやすい人から）
+  const earlyJuniorSecond = candidates.filter(
+    (s) => years(s) >= 3 && years(s) <= 5 && s.weekendHolidayCount < 2
+  );
+  if (earlyJuniorSecond.length > 0) return earlyJuniorSecond;
 
-  // Step 5: 7-9年目 で週末2回目
+  // Step 5: 6-9年目 で週末2回目
   const midJuniorSecond = candidates.filter(
-    (s) => years(s) >= 7 && years(s) <= 9 && s.weekendHolidayCount < 2
+    (s) => years(s) >= 6 && years(s) <= 9 && s.weekendHolidayCount < 2
   );
   if (midJuniorSecond.length > 0) return midJuniorSecond;
 
@@ -140,6 +141,7 @@ export function generateSchedule(
       weekendHolidayCount: 0,
       weekendHolidayTotal: carryover[`${WH_PREFIX}${doc.name}`] ?? 0,
       lastShiftDate: null,
+      lastOncallDate: null,
     };
   });
 
@@ -227,6 +229,12 @@ export function generateSchedule(
         return base;
       })();
 
+      // 当直-当直間は中2日以上（soft）: 優先候補に絞るが、いなければ緩める
+      const oncallGapPreferred = candidates.filter(
+        (s) => !s.lastOncallDate || daysBetween(s.lastOncallDate, dateStr) >= 3
+      );
+      if (oncallGapPreferred.length > 0) candidates = oncallGapPreferred;
+
       if (isWH) {
         const withSenior = candidates.filter(isSeniorAllowed);
         const seniorPool = withSenior.length > 0 ? withSenior : candidates;
@@ -260,6 +268,7 @@ export function generateSchedule(
           chosen.weekendHolidayTotal++;
         }
         chosen.lastShiftDate = dateStr;
+        chosen.lastOncallDate = dateStr;
         if (dayType === "saturday") satThisMonth.add(chosen.doctor.name);
       } else {
         warnings.push(`${dateStr} 当直: 割り当て可能な医師がいません`);
