@@ -88,11 +88,11 @@ export function generateSchedule(
         return true;
       });
 
-      // 土日祝の日直は週末回数上限2回を優先適用
-      let candidates = base;
-      if (isWH) {
-        const withCap = base.filter((s) => s.weekendHolidayCount < 2);
-        if (withCap.length > 0) candidates = withCap;
+      // 土日祝の日直は週末回数上限2回（hard）
+      let candidates = isWH ? base.filter((s) => s.weekendHolidayCount < 2) : base;
+      if (isWH && candidates.length === 0) {
+        candidates = base; // 全員上限超えの場合のみ緩める
+        warnings.push(`${dateStr} 日直: 週末シフト上限超過のため上限を緩めて割り当てます`);
       }
 
       // 中2日間隔
@@ -155,10 +155,11 @@ export function generateSchedule(
       );
       if (withGap.length > 0) candidates = withGap;
 
-      // 土日祝は週末回数上限2回（soft）
+      // 土日祝は週末回数上限2回（hard）
       if (isWH) {
         const withCap = candidates.filter((s) => s.weekendHolidayCount < 2);
         if (withCap.length > 0) candidates = withCap;
+        else warnings.push(`${dateStr} 当直: 週末シフト上限超過のため上限を緩めて割り当てます`);
       }
 
       // 土曜当直は2か月に1回制限（soft）
