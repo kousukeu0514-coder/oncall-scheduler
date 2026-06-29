@@ -89,23 +89,22 @@ function applyWeekendFilters(
   );
   if (midJuniorSecond.length > 0) return midJuniorSecond;
 
-  // Step 4: 若手（9年目以下）で週末3回未満（シニア2回目より優先）
+  // Step 6: 若手（9年目以下）で週末3回未満
   const juniorThird = gapFiltered.filter(
     (s) => isJunior(s) && s.weekendHolidayCount < 3
   );
   if (juniorThird.length > 0) return juniorThird;
 
-  // Step 5: シニア2回目（間隔維持・週末2回未満）
-  const seniorSecond = gapFiltered.filter((s) => s.weekendHolidayCount < 2);
-  if (seniorSecond.length > 0) return seniorSecond;
-
-  // Step 6: 間隔制限も緩める（週末2回未満）
-  const fullRelaxed = base.filter((s) => s.weekendHolidayCount < 2);
+  // Step 7: 間隔制限も緩める（若手3回未満 or シニア未割当のみ）
+  // シニアはshiftCount=0のみ対象（月1回上限を厳守）
+  const fullRelaxed = base.filter(
+    (s) => isJunior(s) ? s.weekendHolidayCount < 3 : s.shiftCount === 0 && s.weekendHolidayCount < 2
+  );
   if (fullRelaxed.length > 0) return fullRelaxed;
 
-  // Step 7: 最終手段
+  // Step 8: 最終手段（若手のみ）
   warnings.push(`${dateStr} ${label}: 週末シフト上限超過のため上限を緩めて割り当てます`);
-  return base;
+  return base.filter(isJunior).length > 0 ? base.filter(isJunior) : base;
 }
 
 export function generateSchedule(
