@@ -302,12 +302,6 @@ function pickBest(candidates: DoctorState[]): DoctorState | null {
   if (underTarget.length > 0) return sortByRemaining(underTarget)[0];
 
   // 最終手段：目標超過でも割り当て（間隔ルールは絶対に緩めない）
-  // やむを得ず超過させるならシニア（年次高い）から先に → 若手の逆転を防ぐ
-  return [...candidates].sort((a, b) => {
-    const remainA = a.target - a.accumulated;
-    const remainB = b.target - b.accumulated;
-    if (Math.abs(remainB - remainA) > 0.001) return remainB - remainA;
-    // 同じ残りならシニアを先に超過させる
-    return (b.doctor.yearsOfExperience ?? 0) - (a.doctor.yearsOfExperience ?? 0);
-  })[0];
+  // 超過分は翌月繰り越しで調整
+  return sortByRemaining(candidates)[0];
 }
