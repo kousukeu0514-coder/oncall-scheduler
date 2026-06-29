@@ -14,7 +14,9 @@ export default function UnitCountChart({ doctors, unitCounts, weekendHolidayCoun
     const base = getTargetUnits(doc.yearsOfExperience ?? 3);
     const baseTarget = getAdjustedTarget(base, doc.isRotating);
     const carry = carryover[doc.name] ?? 0;
-    const target = doc.hasChildcare === true ? 2 : Math.max(0.5, Math.round((baseTarget - carry) * 2) / 2);
+    const target = doc.hasChildcare === true
+      ? Math.min(2, Math.max(0.5, Math.round((baseTarget - carry) * 2) / 2))
+      : Math.max(0.5, Math.round((baseTarget - carry) * 2) / 2);
     const actual = unitCounts[doc.name] ?? 0;
     const diff = actual - target;
     const whCount = weekendHolidayCounts[doc.name] ?? 0;

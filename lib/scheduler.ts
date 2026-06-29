@@ -41,8 +41,10 @@ export function generateSchedule(
     const baseTarget = getAdjustedTarget(base, doc.isRotating);
     const carry = carryover[doc.name] ?? 0;
     const adjusted = baseTarget - carry;
-    // 日直のみ対応は繰り越し関係なく常に2単位固定、それ以外は最低0.5単位確保
-    const target = doc.hasChildcare === true ? 2 : Math.max(0.5, Math.round(adjusted * 2) / 2);
+    // 日直のみ対応は最大2単位（基本目標が2未満の場合は基本目標を優先）、それ以外は最低0.5単位確保
+    const target = doc.hasChildcare === true
+      ? Math.min(2, Math.max(0.5, Math.round(adjusted * 2) / 2))
+      : Math.max(0.5, Math.round(adjusted * 2) / 2);
     return { doctor: doc, target, baseTarget, accumulated: 0, weekendHolidayCount: 0 };
   });
 
