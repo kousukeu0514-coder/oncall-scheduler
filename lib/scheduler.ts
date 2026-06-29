@@ -57,31 +57,25 @@ function applyWeekendFilters(
   label: string,
   warnings: string[]
 ): DoctorState[] {
-  // Step 1: 3-6年目 で週末1回目（まだ0回）
-  const earlyJuniorFirst = candidates.filter(
-    (s) => years(s) >= 3 && years(s) <= 6 && s.weekendHolidayCount < 1
+  // Step 1: 3年目 で週末2回まで（1回目・2回目まとめて最優先）
+  const thirdYear = candidates.filter(
+    (s) => years(s) === 3 && s.weekendHolidayCount < 2
   );
-  if (earlyJuniorFirst.length > 0) return earlyJuniorFirst;
+  if (thirdYear.length > 0) return thirdYear;
 
-  // Step 2: 10年目以上 未割当（3-6年目の2回目より先に1コマ確保）
+  // Step 2: 10年目以上 未割当
   const seniorFirst = candidates.filter(
     (s) => years(s) >= 10 && s.shiftCount === 0 && s.weekendHolidayCount < 2
   );
   if (seniorFirst.length > 0) return seniorFirst;
 
-  // Step 3: 7-9年目 で週末1回目（まだ0回）
-  const midJuniorFirst = candidates.filter(
-    (s) => years(s) >= 7 && years(s) <= 9 && s.weekendHolidayCount < 1
+  // Step 3: 4-9年目 で週末1回目
+  const midFirst = candidates.filter(
+    (s) => years(s) >= 4 && years(s) <= 9 && s.weekendHolidayCount < 1
   );
-  if (midJuniorFirst.length > 0) return midJuniorFirst;
+  if (midFirst.length > 0) return midFirst;
 
-  // Step 4a: 3年目 で週末2回目（必ず2回入れる）
-  const thirdYearSecond = candidates.filter(
-    (s) => years(s) === 3 && s.weekendHolidayCount < 2
-  );
-  if (thirdYearSecond.length > 0) return thirdYearSecond;
-
-  // Step 4b: 4-5年目 で週末2回目
+  // Step 4: 4-5年目 で週末2回目
   const earlyJuniorSecond = candidates.filter(
     (s) => years(s) >= 4 && years(s) <= 5 && s.weekendHolidayCount < 2
   );
