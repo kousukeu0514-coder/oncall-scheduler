@@ -22,6 +22,7 @@ interface DoctorState {
 
 const SAT_PREFIX = "__sat__";
 const WH_PREFIX = "__wh__";
+const HARD_MAX = 6; // 累積単位数ハードキャップ
 
 function daysBetween(a: string, b: string): number {
   return Math.round(
@@ -29,7 +30,6 @@ function daysBetween(a: string, b: string): number {
   );
 }
 
-// 間隔チェック：中1日以上（= 当日と次のシフトが2日以上離れている）
 function hasEnoughGap(s: DoctorState, dateStr: string): boolean {
   return !s.lastShiftDate || daysBetween(s.lastShiftDate, dateStr) >= 2;
 }
@@ -42,39 +42,53 @@ function isSeniorAllowed(s: DoctorState): boolean {
   return isJunior(s) || s.shiftCount === 0;
 }
 
-// 週末スロットの候補を絞る：若手優先→シニア→最終手段
+function years(s: DoctorState): number {
+  return s.doctor.yearsOfExperience ?? 0;
+}
+
+// 週末スロットの候補絞り込み
+// 優先：3-6年目→7-9年目→10年目以上(1枠)→若手3回目→シニア2回目
 function applyWeekendFilters(
-  candidates: DoctorState[],
-  gapFiltered: DoctorState[],
-  base: DoctorState[],
+  candidates: DoctorState[], // isSeniorAllowed適用済み（シニア1回済み除外）
+  gapFiltered: DoctorState[], // gap制限適用済み（全員）
+  base: DoctorState[],        // gap制限なし（全員）
   dateStr: string,
   label: string,
   warnings: string[]
 ): DoctorState[] {
-  // Step 1: 若手 OR シニア未割当（0回）かつ上限未満
-  // ※ シニア0回はpickBest内で最優先、若手は2回までを先に埋める
-  const priorityWithCap = candidates.filter(
-    (s) => (isJunior(s) || s.shiftCount === 0) && s.weekendHolidayCount < 2
+  // Step 1: 3-6年目 で週末2回未満
+  const earlyJunior = candidates.filter(
+    (s) => years(s) >= 3 && years(s) <= 6 && s.weekendHolidayCount < 2
   );
-  if (priorityWithCap.length > 0) return priorityWithCap;
+  if (earlyJunior.length > 0) return earlyJunior;
 
-  // Step 2: 全員（シニア2回目も許可）かつ上限未満
-  const withCap = candidates.filter((s) => s.weekendHolidayCount < 2);
-  if (withCap.length > 0) return withCap;
+  // Step 2: 7-9年目 で週末2回未満
+  const midJunior = candidates.filter(
+    (s) => years(s) >= 7 && years(s) <= 9 && s.weekendHolidayCount < 2
+  );
+  if (midJunior.length > 0) return midJunior;
 
-  // Step 2.5: シニア2回目になるよりも若手（9年目以下）の土日祝3回目を優先
-  const juniorThirdCap = gapFiltered.filter((s) => isJunior(s) && s.weekendHolidayCount < 3);
-  if (juniorThirdCap.length > 0) return juniorThirdCap;
+  // Step 3: 10年目以上 未割当（週末に1コマ確保）
+  const seniorFirst = candidates.filter(
+    (s) => years(s) >= 10 && s.shiftCount === 0 && s.weekendHolidayCount < 2
+  );
+  if (seniorFirst.length > 0) return seniorFirst;
 
-  // Step 3: シニア制限を緩める（上限未満 + 間隔維持）
-  const seniorRelaxed = gapFiltered.filter((s) => s.weekendHolidayCount < 2);
-  if (seniorRelaxed.length > 0) return seniorRelaxed;
+  // Step 4: 若手（9年目以下）で週末3回未満（シニア2回目より優先）
+  const juniorThird = gapFiltered.filter(
+    (s) => isJunior(s) && s.weekendHolidayCount < 3
+  );
+  if (juniorThird.length > 0) return juniorThird;
 
-  // Step 4: 間隔制限も緩める（上限未満のみ維持）
+  // Step 5: シニア2回目（間隔維持・週末2回未満）
+  const seniorSecond = gapFiltered.filter((s) => s.weekendHolidayCount < 2);
+  if (seniorSecond.length > 0) return seniorSecond;
+
+  // Step 6: 間隔制限も緩める（週末2回未満）
   const fullRelaxed = base.filter((s) => s.weekendHolidayCount < 2);
   if (fullRelaxed.length > 0) return fullRelaxed;
 
-  // Step 5: 全員上限超え→上限を緩める（最終手段）
+  // Step 7: 最終手段
   warnings.push(`${dateStr} ${label}: 週末シフト上限超過のため上限を緩めて割り当てます`);
   return base;
 }
@@ -133,12 +147,12 @@ export function generateSchedule(
       const prevAssignment = assignMap.get(prevDateStr);
 
       const base = states.filter((s) => {
+        if (s.accumulated >= HARD_MAX) return false; // 6単位ハードキャップ
         if (s.doctor.unavailableDates.dayshift.includes(dateStr)) return false;
         if (prevAssignment?.oncall === s.doctor.name) return false;
         return true;
       });
 
-      // 間隔：中1日以上（hard）
       const gapFiltered = base.filter((s) => hasEnoughGap(s, dateStr));
       let candidates = gapFiltered.length > 0 ? gapFiltered : (() => {
         warnings.push(`${dateStr} 日直: 間隔制限を緩めて割り当てます`);
@@ -146,21 +160,27 @@ export function generateSchedule(
       })();
 
       if (isWH) {
-        // 10年目以上は月1回まで（soft）→ 若手優先の週末フィルターで内包
         const withSenior = candidates.filter(isSeniorAllowed);
         const seniorPool = withSenior.length > 0 ? withSenior : candidates;
         candidates = applyWeekendFilters(seniorPool, gapFiltered, base, dateStr, "日直", warnings);
       } else {
-        // 平日：シニア制限（soft）
         const withSenior = candidates.filter(isSeniorAllowed);
         if (withSenior.length > 0) candidates = withSenior;
       }
 
-      // 日直のみ医師を優先（目標未達の場合）
-      const childcareCandidates = candidates.filter(
+      // 日直のみ医師：月1回確保を最優先、次に目標未達を優先
+      const childcareUnassigned = candidates.filter(
+        (s) => s.doctor.hasChildcare === true && s.shiftCount === 0
+      );
+      const childcareUnder = candidates.filter(
         (s) => s.doctor.hasChildcare === true && s.accumulated < s.target
       );
-      const chosen = pickBest(childcareCandidates.length > 0 ? childcareCandidates : candidates);
+      const dayshiftPool =
+        childcareUnassigned.length > 0 ? childcareUnassigned :
+        childcareUnder.length > 0 ? childcareUnder :
+        candidates;
+
+      const chosen = pickBest(dayshiftPool, isWH);
       if (chosen) {
         assignment.dayshift = chosen.doctor.name;
         chosen.accumulated += getShiftUnits(dayType, "dayshift");
@@ -181,6 +201,7 @@ export function generateSchedule(
       const prevAssignment = assignMap.get(prevDateStr);
 
       const base = states.filter((s) => {
+        if (s.accumulated >= HARD_MAX) return false; // 6単位ハードキャップ
         if (s.doctor.hasChildcare === true) return false;
         if (s.doctor.unavailableDates.oncall.includes(dateStr)) return false;
         if (prevAssignment?.oncall === s.doctor.name) return false;
@@ -188,7 +209,6 @@ export function generateSchedule(
         return true;
       });
 
-      // 間隔：中1日以上（hard）
       const gapFiltered = base.filter((s) => hasEnoughGap(s, dateStr));
       let candidates = gapFiltered.length > 0 ? gapFiltered : (() => {
         warnings.push(`${dateStr} 当直: 間隔制限を緩めて割り当てます`);
@@ -196,12 +216,12 @@ export function generateSchedule(
       })();
 
       if (isWH) {
-        // 週末：若手優先でシニア制限と上限を適用
         const withSenior = candidates.filter(isSeniorAllowed);
         const seniorPool = withSenior.length > 0 ? withSenior : candidates;
         candidates = applyWeekendFilters(seniorPool, gapFiltered, base, dateStr, "当直", warnings);
       } else {
-        // 平日：シニア制限（soft）
+        // 平日：シニアは週末優先のため平日では最低優先
+        // シニア未割当でも、若手に目標未達があれば若手を先にする
         const withSenior = candidates.filter(isSeniorAllowed);
         if (withSenior.length > 0) candidates = withSenior;
       }
@@ -211,15 +231,14 @@ export function generateSchedule(
         const preferred = candidates.filter(
           (s) => !satLastMonth.has(s.doctor.name) && !satThisMonth.has(s.doctor.name)
         );
-        if (preferred.length > 0) {
-          candidates = preferred;
-        } else {
+        if (preferred.length > 0) candidates = preferred;
+        else {
           const fallback = candidates.filter((s) => !satThisMonth.has(s.doctor.name));
           if (fallback.length > 0) candidates = fallback;
         }
       }
 
-      const chosen = pickBest(candidates);
+      const chosen = pickBest(candidates, isWH);
       if (chosen) {
         assignment.oncall = chosen.doctor.name;
         chosen.accumulated += getShiftUnits(dayType, "oncall");
@@ -277,39 +296,36 @@ function sortByRemaining(pool: DoctorState[]): DoctorState[] {
   return [...pool].sort((a, b) => {
     const remainA = a.target - a.accumulated;
     const remainB = b.target - b.accumulated;
-    // 残り単位数が異なれば必ず多い順（閾値なし）
     if (remainB !== remainA) return remainB - remainA;
-    // 残り単位が同じなら年次が低い（若手）を優先して逆転を防ぐ
+    // 残り同じなら年次が低い（若手）を優先
     const yearsA = a.doctor.yearsOfExperience ?? 99;
     const yearsB = b.doctor.yearsOfExperience ?? 99;
     if (yearsA !== yearsB) return yearsA - yearsB;
-    // それも同じなら累積土日祝回数が少ない順
     return a.weekendHolidayTotal - b.weekendHolidayTotal;
   });
 }
 
-function pickBest(candidates: DoctorState[]): DoctorState | null {
+function pickBest(candidates: DoctorState[], isWH: boolean = false): DoctorState | null {
   if (candidates.length === 0) return null;
 
-  // 最優先：10年目以上でまだ未割り当て（若手が超過する前に確保）
-  const seniorUnassigned = candidates.filter(
-    (s) => (s.doctor.yearsOfExperience ?? 0) >= 10 && s.shiftCount === 0 && s.accumulated < s.target
-  );
-  if (seniorUnassigned.length > 0) return sortByRemaining(seniorUnassigned)[0];
+  // 土日祝のみ：10年目以上未割当を最優先（週末に1枠確保）
+  if (isWH) {
+    const seniorUnassigned = candidates.filter(
+      (s) => years(s) >= 10 && s.shiftCount === 0 && s.accumulated < s.target
+    );
+    if (seniorUnassigned.length > 0) return sortByRemaining(seniorUnassigned)[0];
+  }
 
-  // 1.0単位以上不足している人を最優先（-1.0超えを防ぐ）
-  // ただし10年目以上で月1回制限済み（shiftCount>=1）のシニアは除外
+  // 1.0単位以上不足（シニア1回済みは除外）
   const significantlyUnder = candidates.filter(
-    (s) => s.target - s.accumulated >= 1.0 &&
-      ((s.doctor.yearsOfExperience ?? 0) < 10 || s.shiftCount === 0)
+    (s) => s.target - s.accumulated >= 1.0 && (years(s) < 10 || s.shiftCount === 0)
   );
   if (significantlyUnder.length > 0) return sortByRemaining(significantlyUnder)[0];
 
-  // 目標未達を優先（超過させない）
+  // 目標未達を優先
   const underTarget = candidates.filter((s) => s.accumulated < s.target);
   if (underTarget.length > 0) return sortByRemaining(underTarget)[0];
 
-  // 最終手段：目標超過でも割り当て（間隔ルールは絶対に緩めない）
-  // 超過分は翌月繰り越しで調整
+  // 最終手段：目標超過でも割り当て（翌月繰り越しで調整）
   return sortByRemaining(candidates)[0];
 }
