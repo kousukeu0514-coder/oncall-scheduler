@@ -266,17 +266,26 @@ export function generateSchedule(
   return { schedule, warnings, newCarryover };
 }
 
-function pickBest(candidates: DoctorState[]): DoctorState | null {
-  if (candidates.length === 0) return null;
-  // 目標未達の人を優先（超過させない）
-  const underTarget = candidates.filter((s) => s.accumulated < s.target);
-  const pool = underTarget.length > 0 ? underTarget : candidates;
-  const sorted = [...pool].sort((a, b) => {
+function sortByRemaining(pool: DoctorState[]): DoctorState[] {
+  return [...pool].sort((a, b) => {
     const remainA = a.target - a.accumulated;
     const remainB = b.target - b.accumulated;
     if (Math.abs(remainB - remainA) > 0.4) return remainB - remainA;
-    // 累積土日祝回数が少ない順（長期的公平性）
     return a.weekendHolidayTotal - b.weekendHolidayTotal;
   });
-  return sorted[0];
+}
+
+function pickBest(candidates: DoctorState[]): DoctorState | null {
+  if (candidates.length === 0) return null;
+
+  // 最優先：10年目以上でまだ1回も割り当てられていない医師（若手が超過する前に確保）
+  const seniorUnassigned = candidates.filter(
+    (s) => (s.doctor.yearsOfExperience ?? 0) >= 10 && s.shiftCount === 0 && s.accumulated < s.target
+  );
+  if (seniorUnassigned.length > 0) return sortByRemaining(seniorUnassigned)[0];
+
+  // 通常：目標未達を優先（超過させない）
+  const underTarget = candidates.filter((s) => s.accumulated < s.target);
+  const pool = underTarget.length > 0 ? underTarget : candidates;
+  return sortByRemaining(pool)[0];
 }
