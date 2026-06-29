@@ -322,6 +322,9 @@ function sortByRemaining(pool: DoctorState[]): DoctorState[] {
     const yearsA = a.doctor.yearsOfExperience ?? 99;
     const yearsB = b.doctor.yearsOfExperience ?? 99;
     if (yearsA !== yearsB) return yearsA - yearsB;
+    // 同年次なら今月の土日祝回数が少ない方を優先（単位数を均等化）
+    if (a.weekendHolidayCount !== b.weekendHolidayCount)
+      return a.weekendHolidayCount - b.weekendHolidayCount;
     return a.weekendHolidayTotal - b.weekendHolidayTotal;
   });
 }
