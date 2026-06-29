@@ -275,7 +275,11 @@ function sortByRemaining(pool: DoctorState[]): DoctorState[] {
     const remainB = b.target - b.accumulated;
     // 残り単位数が異なれば必ず多い順（閾値なし）
     if (remainB !== remainA) return remainB - remainA;
-    // 同じ場合のみ累積土日祝回数で公平性を保つ
+    // 残り単位が同じなら年次が低い（若手）を優先して逆転を防ぐ
+    const yearsA = a.doctor.yearsOfExperience ?? 99;
+    const yearsB = b.doctor.yearsOfExperience ?? 99;
+    if (yearsA !== yearsB) return yearsA - yearsB;
+    // それも同じなら累積土日祝回数が少ない順
     return a.weekendHolidayTotal - b.weekendHolidayTotal;
   });
 }
@@ -298,5 +302,12 @@ function pickBest(candidates: DoctorState[]): DoctorState | null {
   if (underTarget.length > 0) return sortByRemaining(underTarget)[0];
 
   // 最終手段：目標超過でも割り当て（間隔ルールは絶対に緩めない）
-  return sortByRemaining(candidates)[0];
+  // やむを得ず超過させるならシニア（年次高い）から先に → 若手の逆転を防ぐ
+  return [...candidates].sort((a, b) => {
+    const remainA = a.target - a.accumulated;
+    const remainB = b.target - b.accumulated;
+    if (Math.abs(remainB - remainA) > 0.001) return remainB - remainA;
+    // 同じ残りならシニアを先に超過させる
+    return (b.doctor.yearsOfExperience ?? 0) - (a.doctor.yearsOfExperience ?? 0);
+  })[0];
 }
