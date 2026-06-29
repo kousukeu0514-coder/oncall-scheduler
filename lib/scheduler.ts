@@ -156,7 +156,7 @@ export function generateSchedule(
       const childcareCandidates = candidates.filter(
         (s) => s.doctor.hasChildcare === true && s.accumulated < s.target
       );
-      const chosen = pickBest(childcareCandidates.length > 0 ? childcareCandidates : candidates, base);
+      const chosen = pickBest(childcareCandidates.length > 0 ? childcareCandidates : candidates);
       if (chosen) {
         assignment.dayshift = chosen.doctor.name;
         chosen.accumulated += getShiftUnits(dayType, "dayshift");
@@ -215,7 +215,7 @@ export function generateSchedule(
         }
       }
 
-      const chosen = pickBest(candidates, base);
+      const chosen = pickBest(candidates);
       if (chosen) {
         assignment.oncall = chosen.doctor.name;
         chosen.accumulated += getShiftUnits(dayType, "oncall");
@@ -278,7 +278,7 @@ function sortByRemaining(pool: DoctorState[]): DoctorState[] {
   });
 }
 
-function pickBest(candidates: DoctorState[], baseAll?: DoctorState[]): DoctorState | null {
+function pickBest(candidates: DoctorState[]): DoctorState | null {
   if (candidates.length === 0) return null;
 
   // 最優先：10年目以上でまだ未割り当て（若手が超過する前に確保）
@@ -291,13 +291,6 @@ function pickBest(candidates: DoctorState[], baseAll?: DoctorState[]): DoctorSta
   const underTarget = candidates.filter((s) => s.accumulated < s.target);
   if (underTarget.length > 0) return sortByRemaining(underTarget)[0];
 
-  // 目標達成済みしかいない場合：間隔制限を緩めて目標未達の医師を探す
-  // （目標を超過させるよりも間隔を犠牲にする方がフェア）
-  if (baseAll) {
-    const underTargetRelaxed = baseAll.filter((s) => s.accumulated < s.target);
-    if (underTargetRelaxed.length > 0) return sortByRemaining(underTargetRelaxed)[0];
-  }
-
-  // 最終手段：目標超過でも割り当て
+  // 最終手段：目標超過でも割り当て（間隔ルールは絶対に緩めない）
   return sortByRemaining(candidates)[0];
 }
