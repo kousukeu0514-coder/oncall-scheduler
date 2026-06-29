@@ -128,11 +128,15 @@ export default function AdminPage() {
     const prev = prevMonth(year, month);
     const prevCarry = await loadCarryover(prev.year, prev.month);
     const satKey = `__sat__${doctorName}`;
+    const sat1Key = `__sat1__${doctorName}`;
+    const sat2Key = `__sat2__${doctorName}`;
     const whKey = `__wh__${doctorName}`;
-    if (doctorName in prevCarry || satKey in prevCarry || whKey in prevCarry) {
+    if (doctorName in prevCarry || satKey in prevCarry || sat1Key in prevCarry || sat2Key in prevCarry || whKey in prevCarry) {
       const updated = { ...prevCarry };
       delete updated[doctorName];
       delete updated[satKey];
+      delete updated[sat1Key];
+      delete updated[sat2Key];
       delete updated[whKey];
       await saveCarryover(prev.year, prev.month, updated);
       setCarryover(updated);
@@ -219,12 +223,12 @@ export default function AdminPage() {
               ))}
             </select>
           </div>
-          {Object.entries(carryover).some(([k]) => !k.startsWith("__sat__")) && (
+          {Object.entries(carryover).some(([k]) => !k.startsWith("__sat__") && !k.startsWith("__sat1__") && !k.startsWith("__sat2__")) && (
             <div className="mt-3 p-3 bg-blue-50 rounded-lg text-xs text-blue-700">
               <span className="font-medium">前月（{prev.year}年{prev.month}月）からの繰り越し: </span>
               <div className="flex flex-wrap gap-2 mt-1">
                 {Object.entries(carryover)
-                  .filter(([k]) => !k.startsWith("__sat__") && !k.startsWith("__wh__"))
+                  .filter(([k]) => !k.startsWith("__sat__") && !k.startsWith("__sat1__") && !k.startsWith("__sat2__") && !k.startsWith("__wh__"))
                   .map(([name, v]) => (
                     <span key={name} className={`inline-flex items-center gap-1 ${v > 0 ? "text-orange-600" : "text-green-700"}`}>
                       {name}: {v > 0 ? "+" : ""}{v}単位
@@ -233,6 +237,8 @@ export default function AdminPage() {
                           const updated = { ...carryover };
                           delete updated[name];
                           delete updated[`__sat__${name}`];
+                          delete updated[`__sat1__${name}`];
+                          delete updated[`__sat2__${name}`];
                           delete updated[`__wh__${name}`];
                           await saveCarryover(prev.year, prev.month, updated);
                           setCarryover(updated);

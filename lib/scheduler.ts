@@ -21,7 +21,9 @@ interface DoctorState {
   lastOncallDate: string | null; // 当直-当直間の中2日soft用
 }
 
-const SAT_PREFIX = "__sat__";
+const SAT_PREFIX = "__sat__";   // 旧キー（互換用）
+const SAT1_PREFIX = "__sat1__"; // 先月の土曜当直
+const SAT2_PREFIX = "__sat2__"; // 先々月の土曜当直
 const WH_PREFIX = "__wh__";
 const HARD_MAX = 5.5; // 累積単位数ハードキャップ
 
@@ -117,10 +119,17 @@ export function generateSchedule(
   const assignments: Assignment[] = [];
   const warnings: string[] = [];
 
-  const satLastMonth = new Set<string>(
+  // 土曜当直3か月制限：先月・先々月に実施した医師を除外対象に
+  const satRecent = new Set<string>(
     Object.entries(carryover)
-      .filter(([k, v]) => k.startsWith(SAT_PREFIX) && v === 1)
-      .map(([k]) => k.slice(SAT_PREFIX.length))
+      .filter(([k, v]) =>
+        (k.startsWith(SAT1_PREFIX) || k.startsWith(SAT2_PREFIX) || k.startsWith(SAT_PREFIX)) && v === 1
+      )
+      .map(([k]) =>
+        k.startsWith(SAT1_PREFIX) ? k.slice(SAT1_PREFIX.length)
+        : k.startsWith(SAT2_PREFIX) ? k.slice(SAT2_PREFIX.length)
+        : k.slice(SAT_PREFIX.length)
+      )
   );
   const satThisMonth = new Set<string>();
 
@@ -246,10 +255,10 @@ export function generateSchedule(
         if (withSenior.length > 0) candidates = withSenior;
       }
 
-      // 土曜当直は2か月に1回制限（soft）
+      // 土曜当直は3か月に1回制限（soft）
       if (dayType === "saturday") {
         const preferred = candidates.filter(
-          (s) => !satLastMonth.has(s.doctor.name) && !satThisMonth.has(s.doctor.name)
+          (s) => !satRecent.has(s.doctor.name) && !satThisMonth.has(s.doctor.name)
         );
         if (preferred.length > 0) candidates = preferred;
         else {
@@ -298,8 +307,16 @@ export function generateSchedule(
     newCarryover[s.doctor.name] = Math.round((s.accumulated - s.baseTarget) * 10) / 10;
     newCarryover[`${WH_PREFIX}${s.doctor.name}`] = s.weekendHolidayTotal;
   });
+  // 先月の __sat1__ を __sat2__ に繰り上げ
+  Object.entries(carryover)
+    .filter(([k, v]) => (k.startsWith(SAT1_PREFIX) || k.startsWith(SAT_PREFIX)) && v === 1)
+    .forEach(([k]) => {
+      const name = k.startsWith(SAT1_PREFIX) ? k.slice(SAT1_PREFIX.length) : k.slice(SAT_PREFIX.length);
+      newCarryover[`${SAT2_PREFIX}${name}`] = 1;
+    });
+  // 今月の土曜当直を __sat1__ に保存
   satThisMonth.forEach((name) => {
-    newCarryover[`${SAT_PREFIX}${name}`] = 1;
+    newCarryover[`${SAT1_PREFIX}${name}`] = 1;
   });
 
   const schedule: Schedule = {
