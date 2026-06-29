@@ -11,10 +11,22 @@ import {
 
 interface DoctorState {
   doctor: Doctor;
-  target: number;        // 今月の目標単位数（キャリーオーバー調整済み）
-  baseTarget: number;    // キャリーオーバー調整前の基本目標
+  target: number;
+  baseTarget: number;
   accumulated: number;
-  weekendHolidayCount: number; // 土日祝シフト回数
+  shiftCount: number;            // 今月の合計シフト回数
+  weekendHolidayCount: number;   // 今月の土日祝シフト回数（上限チェック用）
+  weekendHolidayTotal: number;   // 累積土日祝回数（繰り越し含む、公平性ソート用）
+  lastShiftDate: string | null;  // 直近のシフト日（間隔チェック用）
+}
+
+const SAT_PREFIX = "__sat__";
+const WH_PREFIX = "__wh__";
+
+function daysBetween(a: string, b: string): number {
+  return Math.round(
+    (new Date(b + "T00:00:00").getTime() - new Date(a + "T00:00:00").getTime()) / 86400000
+  );
 }
 
 export function generateSchedule(
@@ -28,7 +40,6 @@ export function generateSchedule(
   const assignments: Assignment[] = [];
   const warnings: string[] = [];
 
-  const SAT_PREFIX = "__sat__";
   const satLastMonth = new Set<string>(
     Object.entries(carryover)
       .filter(([k, v]) => k.startsWith(SAT_PREFIX) && v === 1)
@@ -41,11 +52,19 @@ export function generateSchedule(
     const baseTarget = getAdjustedTarget(base, doc.isRotating);
     const carry = carryover[doc.name] ?? 0;
     const adjusted = baseTarget - carry;
-    // 日直のみ対応は最大2単位（基本目標が2未満の場合は基本目標を優先）、それ以外は最低0.5単位確保
     const target = doc.hasChildcare === true
       ? Math.min(2, Math.max(0.5, Math.round(adjusted * 2) / 2))
       : Math.max(0.5, Math.round(adjusted * 2) / 2);
-    return { doctor: doc, target, baseTarget, accumulated: 0, weekendHolidayCount: 0 };
+    return {
+      doctor: doc,
+      target,
+      baseTarget,
+      accumulated: 0,
+      shiftCount: 0,
+      weekendHolidayCount: 0,
+      weekendHolidayTotal: carryover[`${WH_PREFIX}${doc.name}`] ?? 0,
+      lastShiftDate: null,
+    };
   });
 
   const assignMap = new Map<string, Assignment>();
@@ -58,35 +77,57 @@ export function generateSchedule(
 
     const assignment: Assignment = { date: dateStr, dayType, dayshift: null, oncall: null };
 
+    // ── 日直 ──────────────────────────────────────────────────
     if (needsDayshift) {
       const prevDateStr = toDateString(new Date(date.getTime() - 86400000));
       const prevAssignment = assignMap.get(prevDateStr);
 
-      const candidates = states.filter((s) => {
+      const base = states.filter((s) => {
         if (s.doctor.unavailableDates.dayshift.includes(dateStr)) return false;
         if (prevAssignment?.oncall === s.doctor.name) return false;
         return true;
       });
 
+      // 土日祝の日直は週末回数上限2回を優先適用
+      let candidates = base;
+      if (isWH) {
+        const withCap = base.filter((s) => s.weekendHolidayCount < 2);
+        if (withCap.length > 0) candidates = withCap;
+      }
+
+      // 中2日間隔
+      const withGap = candidates.filter(
+        (s) => !s.lastShiftDate || daysBetween(s.lastShiftDate, dateStr) >= 3
+      );
+      if (withGap.length > 0) candidates = withGap;
+
       // 日直のみ医師を優先（目標未達の場合）
       const childcareCandidates = candidates.filter(
         (s) => s.doctor.hasChildcare === true && s.accumulated < s.target
       );
-      const chosen = pickBest(childcareCandidates.length > 0 ? childcareCandidates : candidates, "dayshift");
+      const chosen = pickBest(
+        childcareCandidates.length > 0 ? childcareCandidates : candidates
+      );
       if (chosen) {
         assignment.dayshift = chosen.doctor.name;
         chosen.accumulated += getShiftUnits(dayType, "dayshift");
-        if (isWH) chosen.weekendHolidayCount++;
+        chosen.shiftCount++;
+        if (isWH) {
+          chosen.weekendHolidayCount++;
+          chosen.weekendHolidayTotal++;
+        }
+        chosen.lastShiftDate = dateStr;
       } else {
         warnings.push(`${dateStr} 日直: 割り当て可能な医師がいません`);
       }
     }
 
+    // ── 当直 ──────────────────────────────────────────────────
     {
       const prevDateStr = toDateString(new Date(date.getTime() - 86400000));
       const prevAssignment = assignMap.get(prevDateStr);
 
-      const candidates = states.filter((s) => {
+      const base = states.filter((s) => {
         if (s.doctor.hasChildcare === true) return false;
         if (s.doctor.unavailableDates.oncall.includes(dateStr)) return false;
         if (prevAssignment?.oncall === s.doctor.name) return false;
@@ -94,25 +135,49 @@ export function generateSchedule(
         return true;
       });
 
-      // 土曜当直（1.5単位）は2か月に1回制限：前月・今月すでに割り当て済みの医師を除外
-      let oncallCandidates = candidates;
+      let candidates = base;
+
+      // 10年目以上は月1回まで（soft）
+      const withSenior = candidates.filter(
+        (s) => (s.doctor.yearsOfExperience ?? 0) < 10 || s.shiftCount === 0
+      );
+      if (withSenior.length > 0) candidates = withSenior;
+
+      // 中2日間隔（soft）
+      const withGap = candidates.filter(
+        (s) => !s.lastShiftDate || daysBetween(s.lastShiftDate, dateStr) >= 3
+      );
+      if (withGap.length > 0) candidates = withGap;
+
+      // 土日祝は週末回数上限2回（soft）
+      if (isWH) {
+        const withCap = candidates.filter((s) => s.weekendHolidayCount < 2);
+        if (withCap.length > 0) candidates = withCap;
+      }
+
+      // 土曜当直は2か月に1回制限（soft）
       if (dayType === "saturday") {
         const preferred = candidates.filter(
           (s) => !satLastMonth.has(s.doctor.name) && !satThisMonth.has(s.doctor.name)
         );
-        if (preferred.length > 0) oncallCandidates = preferred;
-        else {
-          // 前月分だけ除外（今月はどうしても必要な場合）
+        if (preferred.length > 0) {
+          candidates = preferred;
+        } else {
           const fallback = candidates.filter((s) => !satThisMonth.has(s.doctor.name));
-          if (fallback.length > 0) oncallCandidates = fallback;
+          if (fallback.length > 0) candidates = fallback;
         }
       }
 
-      const chosen = pickBest(oncallCandidates, "oncall");
+      const chosen = pickBest(candidates);
       if (chosen) {
         assignment.oncall = chosen.doctor.name;
         chosen.accumulated += getShiftUnits(dayType, "oncall");
-        if (isWH) chosen.weekendHolidayCount++;
+        chosen.shiftCount++;
+        if (isWH) {
+          chosen.weekendHolidayCount++;
+          chosen.weekendHolidayTotal++;
+        }
+        chosen.lastShiftDate = dateStr;
         if (dayType === "saturday") satThisMonth.add(chosen.doctor.name);
       } else {
         warnings.push(`${dateStr} 当直: 割り当て可能な医師がいません`);
@@ -140,8 +205,9 @@ export function generateSchedule(
     unitCounts[s.doctor.name] = s.accumulated;
     weekendHolidayCounts[s.doctor.name] = s.weekendHolidayCount;
     newCarryover[s.doctor.name] = Math.round((s.accumulated - s.baseTarget) * 10) / 10;
+    // 累積土日祝回数を繰り越し
+    newCarryover[`${WH_PREFIX}${s.doctor.name}`] = s.weekendHolidayTotal;
   });
-  // 土曜当直をした医師を来月のcarryoverに記録
   satThisMonth.forEach((name) => {
     newCarryover[`${SAT_PREFIX}${name}`] = 1;
   });
@@ -157,15 +223,14 @@ export function generateSchedule(
   return { schedule, warnings, newCarryover };
 }
 
-function pickBest(candidates: DoctorState[], _shift: string): DoctorState | null {
+function pickBest(candidates: DoctorState[]): DoctorState | null {
   if (candidates.length === 0) return null;
-  // 第1ソート: 残り単位数が多い順
-  // 第2ソート: 土日祝シフト回数が少ない順（公平性）
   const sorted = [...candidates].sort((a, b) => {
     const remainA = a.target - a.accumulated;
     const remainB = b.target - b.accumulated;
     if (Math.abs(remainB - remainA) > 0.4) return remainB - remainA;
-    return a.weekendHolidayCount - b.weekendHolidayCount;
+    // 累積土日祝回数が少ない順（長期的公平性）
+    return a.weekendHolidayTotal - b.weekendHolidayTotal;
   });
   return sorted[0];
 }
