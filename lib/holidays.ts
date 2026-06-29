@@ -76,10 +76,10 @@ export function getTargetUnits(yearsOfExperience: number): number {
     7: 3.5,
     8: 3.0,
     9: 2.5,
-    10: 2.0,
+    10: 1.0,
   };
-  if (yearsOfExperience <= 10) return table[yearsOfExperience] ?? 2.0;
-  return 1.5;
+  if (yearsOfExperience <= 10) return table[yearsOfExperience] ?? 1.0;
+  return 1.0;
 }
 
 // ローテーション種別に応じた目標単位数調整
