@@ -62,9 +62,9 @@ function applyWeekendFilters(
   const withCap = candidates.filter((s) => s.weekendHolidayCount < 2);
   if (withCap.length > 0) return withCap;
 
-  // Step 2.5: シニア2回目になるよりも若手（9年目以下）の週末上限超過を優先
-  const juniorOverCap = gapFiltered.filter((s) => isJunior(s));
-  if (juniorOverCap.length > 0) return juniorOverCap;
+  // Step 2.5: シニア2回目になるよりも若手（9年目以下）の土日祝3回目を優先
+  const juniorThirdCap = gapFiltered.filter((s) => isJunior(s) && s.weekendHolidayCount < 3);
+  if (juniorThirdCap.length > 0) return juniorThirdCap;
 
   // Step 3: シニア制限を緩める（上限未満 + 間隔維持）
   const seniorRelaxed = gapFiltered.filter((s) => s.weekendHolidayCount < 2);
