@@ -186,11 +186,11 @@ export function generateSchedule(
         const seniorPool = withSenior.length > 0 ? withSenior : candidates;
         candidates = applyWeekendFilters(seniorPool, gapFiltered, base, dateStr, "日直", warnings);
       } else {
-        // 平日：若手3人以上なら若手のみ、2人以下なら未割当シニアも含める（月1回上限を守る）
-        const juniorOnly = candidates.filter(isJunior);
-        const withUnassignedSenior = candidates.filter(isSeniorAllowed);
-        if (juniorOnly.length > 2) candidates = juniorOnly;
-        else if (withUnassignedSenior.length > 0) candidates = withUnassignedSenior;
+        // 平日：シニアは常にshiftCount=0のみ候補（月1回上限を厳守）
+        // 若手が3人超なら若手のみ、2人以下ならシニア未割当も含める
+        const allowed = candidates.filter(isSeniorAllowed); // 若手 + シニア未割当
+        const juniorOnly = allowed.filter(isJunior);
+        candidates = juniorOnly.length > 2 ? juniorOnly : (allowed.length > 0 ? allowed : candidates);
       }
 
       // 日直のみ医師：月1回確保を最優先、次に目標未達を優先
