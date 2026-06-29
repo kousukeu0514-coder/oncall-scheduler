@@ -59,11 +59,11 @@ function applyWeekendFilters(
   label: string,
   warnings: string[]
 ): DoctorState[] {
-  // Step 1: 3年目 で週末2回まで（1回目・2回目まとめて最優先）
-  const thirdYear = candidates.filter(
-    (s) => years(s) === 3 && s.weekendHolidayCount < 2
+  // Step 1: 3〜4年目 で週末2回まで（最優先で確保）
+  const juniorPriority = candidates.filter(
+    (s) => years(s) >= 3 && years(s) <= 4 && s.weekendHolidayCount < 2
   );
-  if (thirdYear.length > 0) return thirdYear;
+  if (juniorPriority.length > 0) return juniorPriority;
 
   // Step 2: 10年目以上 未割当
   const seniorFirst = candidates.filter(
@@ -187,8 +187,9 @@ export function generateSchedule(
         const seniorPool = withSenior.length > 0 ? withSenior : candidates;
         candidates = applyWeekendFilters(seniorPool, gapFiltered, base, dateStr, "日直", warnings);
       } else {
+        // 平日：候補者が少ない（3人以下）場合はシニア制限を外して全員から選ぶ
         const withSenior = candidates.filter(isSeniorAllowed);
-        if (withSenior.length > 0) candidates = withSenior;
+        if (withSenior.length > 0 && candidates.length > 3) candidates = withSenior;
       }
 
       // 日直のみ医師：月1回確保を最優先、次に目標未達を優先
@@ -249,10 +250,9 @@ export function generateSchedule(
         const seniorPool = withSenior.length > 0 ? withSenior : candidates;
         candidates = applyWeekendFilters(seniorPool, gapFiltered, base, dateStr, "当直", warnings);
       } else {
-        // 平日：シニアは週末優先のため平日では最低優先
-        // シニア未割当でも、若手に目標未達があれば若手を先にする
+        // 平日：候補者が少ない（3人以下）場合はシニア制限を外して全員から選ぶ
         const withSenior = candidates.filter(isSeniorAllowed);
-        if (withSenior.length > 0) candidates = withSenior;
+        if (withSenior.length > 0 && candidates.length > 3) candidates = withSenior;
       }
 
       // 土曜当直は3か月に1回制限（soft）
