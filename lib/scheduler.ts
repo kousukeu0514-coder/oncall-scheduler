@@ -88,24 +88,42 @@ export function generateSchedule(
         return true;
       });
 
-      // 土日祝の日直は週末回数上限2回（hard）
-      let candidates = isWH ? base.filter((s) => s.weekendHolidayCount < 2) : base;
-      if (isWH && candidates.length === 0) {
-        candidates = base; // 全員上限超えの場合のみ緩める
-        warnings.push(`${dateStr} 日直: 週末シフト上限超過のため上限を緩めて割り当てます`);
-      }
-
-      // 中2日間隔
-      const withGap = candidates.filter(
+      // 中2日間隔（soft）
+      const baseWithGap = base.filter(
         (s) => !s.lastShiftDate || daysBetween(s.lastShiftDate, dateStr) >= 3
       );
-      if (withGap.length > 0) candidates = withGap;
+      const gapFiltered = baseWithGap.length > 0 ? baseWithGap : base;
 
       // 10年目以上は月1回まで（soft）- 日直のみ優先より先に適用
-      const withSenior = candidates.filter(
+      const withSenior = gapFiltered.filter(
         (s) => (s.doctor.yearsOfExperience ?? 0) < 10 || s.shiftCount === 0
       );
-      if (withSenior.length > 0) candidates = withSenior;
+      let candidates = withSenior.length > 0 ? withSenior : gapFiltered;
+
+      // 土日祝の日直は週末回数上限2回（hard）
+      // 超過時はシニア制限を緩めて対応、それでも無理な場合のみ上限を緩める
+      if (isWH) {
+        const withCap = candidates.filter((s) => s.weekendHolidayCount < 2);
+        if (withCap.length > 0) {
+          candidates = withCap;
+        } else {
+          // シニア制限を緩めて再試行（間隔制限は維持）
+          const seniorRelaxed = gapFiltered.filter((s) => s.weekendHolidayCount < 2);
+          if (seniorRelaxed.length > 0) {
+            candidates = seniorRelaxed;
+          } else {
+            // 間隔制限も緩めて再試行
+            const fullRelaxed = base.filter((s) => s.weekendHolidayCount < 2);
+            if (fullRelaxed.length > 0) {
+              candidates = fullRelaxed;
+            } else {
+              // 全員上限超え：やむを得ず上限を緩める
+              candidates = base;
+              warnings.push(`${dateStr} 日直: 週末シフト上限超過のため上限を緩めて割り当てます`);
+            }
+          }
+        }
+      }
 
       // 日直のみ医師を優先（目標未達 かつ 月1回制限を超えていない場合）
       const childcareCandidates = candidates.filter(
@@ -141,25 +159,41 @@ export function generateSchedule(
         return true;
       });
 
-      let candidates = base;
-
-      // 10年目以上は月1回まで（soft）
-      const withSenior = candidates.filter(
-        (s) => (s.doctor.yearsOfExperience ?? 0) < 10 || s.shiftCount === 0
-      );
-      if (withSenior.length > 0) candidates = withSenior;
-
       // 中2日間隔（soft）
-      const withGap = candidates.filter(
+      const baseWithGap = base.filter(
         (s) => !s.lastShiftDate || daysBetween(s.lastShiftDate, dateStr) >= 3
       );
-      if (withGap.length > 0) candidates = withGap;
+      const gapFiltered = baseWithGap.length > 0 ? baseWithGap : base;
+
+      // 10年目以上は月1回まで（soft）
+      const withSenior = gapFiltered.filter(
+        (s) => (s.doctor.yearsOfExperience ?? 0) < 10 || s.shiftCount === 0
+      );
+      let candidates = withSenior.length > 0 ? withSenior : gapFiltered;
 
       // 土日祝は週末回数上限2回（hard）
+      // 超過時はシニア制限を緩めて対応、それでも無理な場合のみ上限を緩める
       if (isWH) {
         const withCap = candidates.filter((s) => s.weekendHolidayCount < 2);
-        if (withCap.length > 0) candidates = withCap;
-        else warnings.push(`${dateStr} 当直: 週末シフト上限超過のため上限を緩めて割り当てます`);
+        if (withCap.length > 0) {
+          candidates = withCap;
+        } else {
+          // シニア制限を緩めて再試行（間隔制限は維持）
+          const seniorRelaxed = gapFiltered.filter((s) => s.weekendHolidayCount < 2);
+          if (seniorRelaxed.length > 0) {
+            candidates = seniorRelaxed;
+          } else {
+            // 間隔制限も緩めて再試行
+            const fullRelaxed = base.filter((s) => s.weekendHolidayCount < 2);
+            if (fullRelaxed.length > 0) {
+              candidates = fullRelaxed;
+            } else {
+              // 全員上限超え：やむを得ず上限を緩める
+              candidates = base;
+              warnings.push(`${dateStr} 当直: 週末シフト上限超過のため上限を緩めて割り当てます`);
+            }
+          }
+        }
       }
 
       // 土曜当直は2か月に1回制限（soft）
