@@ -65,27 +65,25 @@ function applyWeekendFilters(
   );
   if (juniorPriority.length > 0) return juniorPriority;
 
-  // Step 2: 4-9年目 で週末1回目（シニアより先に若手全員の1回目を優先）
+  // Step 2: 5〜9年目 で週末1回目
   const midFirst = candidates.filter(
-    (s) => years(s) >= 4 && years(s) <= 9 && s.weekendHolidayCount < 1
+    (s) => years(s) >= 5 && years(s) <= 9 && s.weekendHolidayCount < 1
   );
   if (midFirst.length > 0) return midFirst;
 
-  // Step 3: 10年目以上 未割当（若手全員が1回目を終えた後）
+  // Step 3: 10年目以上 未割当（日直のみ医師を先に、その後通常シニア）
+  const seniorDayshiftOnly = candidates.filter(
+    (s) => years(s) >= 10 && s.shiftCount === 0 && s.doctor.hasChildcare === true
+  );
+  if (seniorDayshiftOnly.length > 0) return seniorDayshiftOnly;
   const seniorFirst = candidates.filter(
     (s) => years(s) >= 10 && s.shiftCount === 0 && s.weekendHolidayCount < 2
   );
   if (seniorFirst.length > 0) return seniorFirst;
 
-  // Step 4: 4-5年目 で週末2回目
-  const earlyJuniorSecond = candidates.filter(
-    (s) => years(s) >= 4 && years(s) <= 5 && s.weekendHolidayCount < 2
-  );
-  if (earlyJuniorSecond.length > 0) return earlyJuniorSecond;
-
-  // Step 5: 6-9年目 で週末2回目
+  // Step 4: 5〜9年目 で週末2回目
   const midJuniorSecond = candidates.filter(
-    (s) => years(s) >= 6 && years(s) <= 9 && s.weekendHolidayCount < 2
+    (s) => years(s) >= 5 && years(s) <= 9 && s.weekendHolidayCount < 2
   );
   if (midJuniorSecond.length > 0) return midJuniorSecond;
 
