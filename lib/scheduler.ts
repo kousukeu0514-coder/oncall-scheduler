@@ -294,7 +294,11 @@ function pickBest(candidates: DoctorState[]): DoctorState | null {
   if (seniorUnassigned.length > 0) return sortByRemaining(seniorUnassigned)[0];
 
   // 1.0単位以上不足している人を最優先（-1.0超えを防ぐ）
-  const significantlyUnder = candidates.filter((s) => s.target - s.accumulated >= 1.0);
+  // ただし10年目以上で月1回制限済み（shiftCount>=1）のシニアは除外
+  const significantlyUnder = candidates.filter(
+    (s) => s.target - s.accumulated >= 1.0 &&
+      ((s.doctor.yearsOfExperience ?? 0) < 10 || s.shiftCount === 0)
+  );
   if (significantlyUnder.length > 0) return sortByRemaining(significantlyUnder)[0];
 
   // 目標未達を優先（超過させない）
