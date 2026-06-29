@@ -101,7 +101,13 @@ export function generateSchedule(
       );
       if (withGap.length > 0) candidates = withGap;
 
-      // 日直のみ医師を優先（目標未達の場合）
+      // 10年目以上は月1回まで（soft）- 日直のみ優先より先に適用
+      const withSenior = candidates.filter(
+        (s) => (s.doctor.yearsOfExperience ?? 0) < 10 || s.shiftCount === 0
+      );
+      if (withSenior.length > 0) candidates = withSenior;
+
+      // 日直のみ医師を優先（目標未達 かつ 月1回制限を超えていない場合）
       const childcareCandidates = candidates.filter(
         (s) => s.doctor.hasChildcare === true && s.accumulated < s.target
       );
