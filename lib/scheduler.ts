@@ -308,13 +308,11 @@ function sortByRemaining(pool: DoctorState[]): DoctorState[] {
 function pickBest(candidates: DoctorState[], isWH: boolean = false): DoctorState | null {
   if (candidates.length === 0) return null;
 
-  // 土日祝のみ：10年目以上未割当を最優先（週末に1枠確保）
-  if (isWH) {
-    const seniorUnassigned = candidates.filter(
-      (s) => years(s) >= 10 && s.shiftCount === 0 && s.accumulated < s.target
-    );
-    if (seniorUnassigned.length > 0) return sortByRemaining(seniorUnassigned)[0];
-  }
+  // 10年目以上未割当を最優先（週末・平日問わず必ず1枠確保）
+  const seniorUnassigned = candidates.filter(
+    (s) => years(s) >= 10 && s.shiftCount === 0 && s.accumulated < s.target
+  );
+  if (seniorUnassigned.length > 0) return sortByRemaining(seniorUnassigned)[0];
 
   // 1.0単位以上不足（シニア1回済みは除外）
   const significantlyUnder = candidates.filter(
