@@ -51,11 +51,14 @@ function applyWeekendFilters(
   label: string,
   warnings: string[]
 ): DoctorState[] {
-  // Step 1: 若手（9年目以下）かつ上限未満
-  const juniorCap = candidates.filter((s) => isJunior(s) && s.weekendHolidayCount < 2);
-  if (juniorCap.length > 0) return juniorCap;
+  // Step 1: 若手 OR シニア未割当（0回）かつ上限未満
+  // ※ シニア0回はpickBest内で最優先、若手は2回までを先に埋める
+  const priorityWithCap = candidates.filter(
+    (s) => (isJunior(s) || s.shiftCount === 0) && s.weekendHolidayCount < 2
+  );
+  if (priorityWithCap.length > 0) return priorityWithCap;
 
-  // Step 2: 全員（シニア含む）かつ上限未満（シニア制限は維持）
+  // Step 2: 全員（シニア2回目も許可）かつ上限未満
   const withCap = candidates.filter((s) => s.weekendHolidayCount < 2);
   if (withCap.length > 0) return withCap;
 
