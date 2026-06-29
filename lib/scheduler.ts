@@ -65,17 +65,17 @@ function applyWeekendFilters(
   );
   if (juniorPriority.length > 0) return juniorPriority;
 
-  // Step 2: 10年目以上 未割当
-  const seniorFirst = candidates.filter(
-    (s) => years(s) >= 10 && s.shiftCount === 0 && s.weekendHolidayCount < 2
-  );
-  if (seniorFirst.length > 0) return seniorFirst;
-
-  // Step 3: 4-9年目 で週末1回目
+  // Step 2: 4-9年目 で週末1回目（シニアより先に若手全員の1回目を優先）
   const midFirst = candidates.filter(
     (s) => years(s) >= 4 && years(s) <= 9 && s.weekendHolidayCount < 1
   );
   if (midFirst.length > 0) return midFirst;
+
+  // Step 3: 10年目以上 未割当（若手全員が1回目を終えた後）
+  const seniorFirst = candidates.filter(
+    (s) => years(s) >= 10 && s.shiftCount === 0 && s.weekendHolidayCount < 2
+  );
+  if (seniorFirst.length > 0) return seniorFirst;
 
   // Step 4: 4-5年目 で週末2回目
   const earlyJuniorSecond = candidates.filter(
