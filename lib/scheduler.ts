@@ -170,6 +170,7 @@ export function generateSchedule(
 
       const base = states.filter((s) => {
         if (s.accumulated + getShiftUnits(dayType, "dayshift") > HARD_MAX) return false;
+        if (years(s) >= 10 && s.shiftCount >= 1) return false; // シニア月1回ハードリミット
         if (s.doctor.unavailableDates.dayshift.includes(dateStr)) return false;
         if (prevAssignment?.oncall === s.doctor.name) return false;
         return true;
@@ -227,6 +228,7 @@ export function generateSchedule(
 
       const base = states.filter((s) => {
         if (s.accumulated + getShiftUnits(dayType, "oncall") > HARD_MAX) return false;
+        if (years(s) >= 10 && s.shiftCount >= 1) return false; // シニア月1回ハードリミット
         if (s.doctor.hasChildcare === true) return false;
         if (s.doctor.unavailableDates.oncall.includes(dateStr)) return false;
         if (prevAssignment?.oncall === s.doctor.name) return false;
