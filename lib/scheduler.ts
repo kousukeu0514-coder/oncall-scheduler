@@ -170,7 +170,6 @@ export function generateSchedule(
 
       const base = states.filter((s) => {
         if (s.accumulated + getShiftUnits(dayType, "dayshift") > HARD_MAX) return false;
-        if (years(s) >= 10 && s.shiftCount >= 1) return false; // シニア月1回ハードリミット
         if (s.doctor.unavailableDates.dayshift.includes(dateStr)) return false;
         if (prevAssignment?.oncall === s.doctor.name) return false;
         return true;
@@ -228,7 +227,6 @@ export function generateSchedule(
 
       const base = states.filter((s) => {
         if (s.accumulated + getShiftUnits(dayType, "oncall") > HARD_MAX) return false;
-        if (years(s) >= 10 && s.shiftCount >= 1) return false; // シニア月1回ハードリミット
         if (s.doctor.hasChildcare === true) return false;
         if (s.doctor.unavailableDates.oncall.includes(dateStr)) return false;
         if (prevAssignment?.oncall === s.doctor.name) return false;
@@ -360,10 +358,16 @@ function pickBest(candidates: DoctorState[], isWH: boolean = false): DoctorState
   );
   if (significantlyUnder.length > 0) return sortByRemaining(significantlyUnder)[0];
 
-  // 目標未達を優先
-  const underTarget = candidates.filter((s) => s.accumulated < s.target);
+  // 目標未達を優先（シニア1回済みは除外）
+  const underTarget = candidates.filter(
+    (s) => s.accumulated < s.target && (years(s) < 10 || s.shiftCount === 0)
+  );
   if (underTarget.length > 0) return sortByRemaining(underTarget)[0];
 
-  // 最終手段：目標超過でも割り当て（翌月繰り越しで調整）
+  // 若手のみで目標超過でも割り当て
+  const juniorOver = candidates.filter((s) => years(s) < 10);
+  if (juniorOver.length > 0) return sortByRemaining(juniorOver)[0];
+
+  // 最終手段：シニア含む全員（真に誰もいない場合のみ）
   return sortByRemaining(candidates)[0];
 }
