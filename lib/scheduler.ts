@@ -161,7 +161,7 @@ export function generateSchedule(
       const prevAssignment = assignMap.get(prevDateStr);
 
       const base = states.filter((s) => {
-        if (s.accumulated >= HARD_MAX) return false; // 6単位ハードキャップ
+        if (s.accumulated + getShiftUnits(dayType, "dayshift") > HARD_MAX) return false;
         if (s.doctor.unavailableDates.dayshift.includes(dateStr)) return false;
         if (prevAssignment?.oncall === s.doctor.name) return false;
         return true;
@@ -215,7 +215,7 @@ export function generateSchedule(
       const prevAssignment = assignMap.get(prevDateStr);
 
       const base = states.filter((s) => {
-        if (s.accumulated >= HARD_MAX) return false; // 6単位ハードキャップ
+        if (s.accumulated + getShiftUnits(dayType, "oncall") > HARD_MAX) return false;
         if (s.doctor.hasChildcare === true) return false;
         if (s.doctor.unavailableDates.oncall.includes(dateStr)) return false;
         if (prevAssignment?.oncall === s.doctor.name) return false;
