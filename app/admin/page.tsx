@@ -270,7 +270,7 @@ export default function AdminPage() {
                 const carry = carryover[doc.name] ?? 0;
                 const adjusted = doc.hasChildcare === true
                     ? Math.min(2, Math.max(0.5, Math.round((baseTarget - carry) * 2) / 2))
-                    : Math.max(0.5, Math.round((baseTarget - carry) * 2) / 2);
+                    : Math.min(5.5, Math.max(0.5, Math.round((baseTarget - carry) * 2) / 2));
                 const completed = doc.yearsOfExperience != null && doc.isRotating != null && doc.hasChildcare != null;
                 return (
                   <div key={doc.id} className="border rounded-lg p-3 text-sm text-gray-800">
@@ -324,7 +324,7 @@ export default function AdminPage() {
                     const carry = carryover[doc.name] ?? 0;
                     const adjusted = doc.hasChildcare === true
                     ? Math.min(2, Math.max(0.5, Math.round((baseTarget - carry) * 2) / 2))
-                    : Math.max(0.5, Math.round((baseTarget - carry) * 2) / 2);
+                    : Math.min(5.5, Math.max(0.5, Math.round((baseTarget - carry) * 2) / 2));
                     return (
                       <tr key={doc.id} className="border-b">
                         <td className="px-3 py-2 font-medium">{doc.name}</td>

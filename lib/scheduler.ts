@@ -100,7 +100,7 @@ export function generateSchedule(
     const adjusted = baseTarget - carry;
     const target = doc.hasChildcare === true
       ? Math.min(2, Math.max(0.5, Math.round(adjusted * 2) / 2))
-      : Math.max(0.5, Math.round(adjusted * 2) / 2);
+      : Math.min(5.5, Math.max(0.5, Math.round(adjusted * 2) / 2));
     return {
       doctor: doc,
       target,
