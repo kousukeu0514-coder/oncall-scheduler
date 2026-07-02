@@ -286,9 +286,21 @@ export function generateSchedule(
         const seniorPool = withSenior.length > 0 ? withSenior : candidates;
         candidates = applyWeekendFilters(seniorPool, gapFiltered, base, dateStr, "当直", warnings, seniorReservedForWeekday);
 
-        // 2週連続土日当直を避ける（soft）
+        // 土曜当直は3か月に1回制限（soft）- Softフィルターより先に適用
+        if (dayType === "saturday") {
+          const preferred = candidates.filter(
+            (s) => !satRecent.has(s.doctor.name) && !satThisMonth.has(s.doctor.name)
+          );
+          if (preferred.length > 0) candidates = preferred;
+          else {
+            const fallback = candidates.filter((s) => !satThisMonth.has(s.doctor.name));
+            if (fallback.length > 0) candidates = fallback;
+          }
+        }
+
+        // 2週連続土日当直を避ける（soft）- 8日未満は連続週末とみなす
         const noConsecutiveWeekend = candidates.filter(
-          (s) => !s.lastWeekendOncallDate || daysBetween(s.lastWeekendOncallDate, dateStr) >= 7
+          (s) => !s.lastWeekendOncallDate || daysBetween(s.lastWeekendOncallDate, dateStr) >= 8
         );
         if (noConsecutiveWeekend.length > 0) candidates = noConsecutiveWeekend;
 
@@ -303,18 +315,6 @@ export function generateSchedule(
         const allowed = candidates.filter(isSeniorAllowed);
         const juniorOnly = allowed.filter(isJunior);
         candidates = juniorOnly.length > 2 ? juniorOnly : (allowed.length > 0 ? allowed : candidates);
-      }
-
-      // 土曜当直は3か月に1回制限（soft）
-      if (dayType === "saturday") {
-        const preferred = candidates.filter(
-          (s) => !satRecent.has(s.doctor.name) && !satThisMonth.has(s.doctor.name)
-        );
-        if (preferred.length > 0) candidates = preferred;
-        else {
-          const fallback = candidates.filter((s) => !satThisMonth.has(s.doctor.name));
-          if (fallback.length > 0) candidates = fallback;
-        }
       }
 
       const chosen = pickBest(candidates);
