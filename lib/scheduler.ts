@@ -17,14 +17,18 @@ interface DoctorState {
   shiftCount: number;
   weekendHolidayCount: number;   // 今月の土日祝シフト回数（上限チェック用）
   weekendHolidayTotal: number;   // 累積土日祝回数（繰り越し含む、公平性ソート用）
+  weekendOncallCount: number;    // 今月の土日祝当直回数（2か月3回制限用）
+  weekendOncallLastMonth: number;// 先月の土日祝当直回数（carryoverから）
   lastShiftDate: string | null;
   lastOncallDate: string | null; // 当直-当直間の中2日soft用
+  lastWeekendOncallDate: string | null; // 2週連続土日当直回避soft用
 }
 
 const SAT_PREFIX = "__sat__";   // 旧キー（互換用）
 const SAT1_PREFIX = "__sat1__"; // 先月の土曜当直
 const SAT2_PREFIX = "__sat2__"; // 先々月の土曜当直
 const WH_PREFIX = "__wh__";
+const WHO_PREFIX = "__who1__";  // 先月の土日祝当直回数（2か月3回制限用）
 const HARD_MAX = 5.5; // 累積単位数ハードキャップ
 
 function daysBetween(a: string, b: string): number {
@@ -59,17 +63,17 @@ function applyWeekendFilters(
   warnings: string[],
   seniorReservedForWeekday: Set<string> // 平日不足日に必要なシニア
 ): DoctorState[] {
-  // Step 1: 3〜4年目（1・2回目）＋ 10年目以上の日直のみ（hasChildcare）未割当
+  // Step 1: 3〜5年目（1・2回目）＋ 10年目以上の日直のみ（hasChildcare）未割当
   const step1 = candidates.filter(
     (s) =>
-      (years(s) >= 3 && years(s) <= 4 && s.weekendHolidayCount < 2) ||
+      (years(s) >= 3 && years(s) <= 5 && s.weekendHolidayCount < 2) ||
       (years(s) >= 10 && s.doctor.hasChildcare === true && s.shiftCount === 0)
   );
   if (step1.length > 0) return step1;
 
-  // Step 2: 5〜9年目 で週末1回目
+  // Step 2: 6〜9年目 で週末1回目
   const midFirst = candidates.filter(
-    (s) => years(s) >= 5 && years(s) <= 9 && s.weekendHolidayCount < 1
+    (s) => years(s) >= 6 && years(s) <= 9 && s.weekendHolidayCount < 1
   );
   if (midFirst.length > 0) return midFirst;
 
@@ -90,9 +94,9 @@ function applyWeekendFilters(
   );
   if (seniorOncallAny.length > 0) return seniorOncallAny;
 
-  // Step 4: 5〜9年目 で週末2回目
+  // Step 4: 6〜9年目 で週末2回目
   const midJuniorSecond = candidates.filter(
-    (s) => years(s) >= 5 && years(s) <= 9 && s.weekendHolidayCount < 2
+    (s) => years(s) >= 6 && years(s) <= 9 && s.weekendHolidayCount < 2
   );
   if (midJuniorSecond.length > 0) return midJuniorSecond;
 
@@ -178,8 +182,11 @@ export function generateSchedule(
       shiftCount: 0,
       weekendHolidayCount: 0,
       weekendHolidayTotal: carryover[`${WH_PREFIX}${doc.name}`] ?? 0,
+      weekendOncallCount: 0,
+      weekendOncallLastMonth: carryover[`${WHO_PREFIX}${doc.name}`] ?? 0,
       lastShiftDate: null,
       lastOncallDate: null,
+      lastWeekendOncallDate: null,
     };
   });
 
@@ -278,6 +285,18 @@ export function generateSchedule(
         const withSenior = candidates.filter(isSeniorAllowed);
         const seniorPool = withSenior.length > 0 ? withSenior : candidates;
         candidates = applyWeekendFilters(seniorPool, gapFiltered, base, dateStr, "当直", warnings, seniorReservedForWeekday);
+
+        // 2週連続土日当直を避ける（soft）
+        const noConsecutiveWeekend = candidates.filter(
+          (s) => !s.lastWeekendOncallDate || daysBetween(s.lastWeekendOncallDate, dateStr) >= 7
+        );
+        if (noConsecutiveWeekend.length > 0) candidates = noConsecutiveWeekend;
+
+        // 2か月で土日当直3回以内（soft）
+        const recentUnder3 = candidates.filter(
+          (s) => s.weekendOncallCount + s.weekendOncallLastMonth < 3
+        );
+        if (recentUnder3.length > 0) candidates = recentUnder3;
       } else {
         // 平日：シニアは常にshiftCount=0のみ候補（月1回上限を厳守）
         // 若手が3人超なら若手のみ、2人以下ならシニア未割当も含める
@@ -309,6 +328,10 @@ export function generateSchedule(
         }
         chosen.lastShiftDate = dateStr;
         chosen.lastOncallDate = dateStr;
+        if (isWH) {
+          chosen.weekendOncallCount++;
+          chosen.lastWeekendOncallDate = dateStr;
+        }
         if (dayType === "saturday") satThisMonth.add(chosen.doctor.name);
       } else {
         warnings.push(`${dateStr} 当直: 割り当て可能な医師がいません`);
@@ -337,6 +360,7 @@ export function generateSchedule(
     weekendHolidayCounts[s.doctor.name] = s.weekendHolidayCount;
     newCarryover[s.doctor.name] = Math.round((s.accumulated - s.baseTarget) * 10) / 10;
     newCarryover[`${WH_PREFIX}${s.doctor.name}`] = s.weekendHolidayTotal;
+    newCarryover[`${WHO_PREFIX}${s.doctor.name}`] = s.weekendOncallCount;
   });
   // 先月の __sat1__ を __sat2__ に繰り上げ
   Object.entries(carryover)
