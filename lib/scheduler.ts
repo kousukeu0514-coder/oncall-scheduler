@@ -128,14 +128,14 @@ export function generateSchedule(
   const assignments: Assignment[] = [];
   const warnings: string[] = [];
 
+  // 土曜当直は2か月に1回制限: 先月（SAT1）のみ参照（SAT2は除外）
   const satRecent = new Set<string>(
     Object.entries(carryover)
       .filter(([k, v]) =>
-        (k.startsWith(SAT1_PREFIX) || k.startsWith(SAT2_PREFIX) || k.startsWith(SAT_PREFIX)) && v === 1
+        (k.startsWith(SAT1_PREFIX) || k.startsWith(SAT_PREFIX)) && v === 1
       )
       .map(([k]) =>
         k.startsWith(SAT1_PREFIX) ? k.slice(SAT1_PREFIX.length)
-        : k.startsWith(SAT2_PREFIX) ? k.slice(SAT2_PREFIX.length)
         : k.slice(SAT_PREFIX.length)
       )
   );
