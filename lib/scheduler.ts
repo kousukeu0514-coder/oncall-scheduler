@@ -53,7 +53,23 @@ function years(s: DoctorState): number {
   return s.doctor.yearsOfExperience ?? 0;
 }
 
-// 週末スロットの候補絞り込み
+// 土曜当直制限フィルター: 2か月制限 → 今月制限 → なし の順で適用し、有効な候補を返す
+// 土曜以外はそのまま返す。warningはrelaxed時に呼び出し元で記録
+function applySaturdayFilter(
+  pool: DoctorState[],
+  dayType: string,
+  satRecent: Set<string>,
+  satThisMonth: Set<string>
+): { result: DoctorState[]; relaxed: "none" | "recent" | "all" } {
+  if (dayType !== "saturday") return { result: pool, relaxed: "none" };
+  const pref = pool.filter((s) => !satRecent.has(s.doctor.name) && !satThisMonth.has(s.doctor.name));
+  if (pref.length > 0) return { result: pref, relaxed: "none" };
+  const fallback = pool.filter((s) => !satThisMonth.has(s.doctor.name));
+  if (fallback.length > 0) return { result: fallback, relaxed: "recent" };
+  return { result: pool, relaxed: "all" };
+}
+
+// 週末スロットの候補絞り込み（土曜制限を各Stepに組み込み）
 function applyWeekendFilters(
   candidates: DoctorState[], // isSeniorAllowed適用済み
   gapFiltered: DoctorState[], // gap制限適用済み（全員）
@@ -61,44 +77,73 @@ function applyWeekendFilters(
   dateStr: string,
   label: string,
   warnings: string[],
-  seniorReservedForWeekday: Set<string> // 平日不足日に必要なシニア
+  seniorReservedForWeekday: Set<string>, // 平日不足日に必要なシニア
+  dayType: string,
+  satRecent: Set<string>,
+  satThisMonth: Set<string>
 ): DoctorState[] {
+  // 各Stepに土曜制限を適用し、有効候補が残るStepを選ぶ
+  const tryStep = (pool: DoctorState[]): DoctorState[] | null => {
+    if (pool.length === 0) return null;
+    const { result, relaxed } = applySaturdayFilter(pool, dayType, satRecent, satThisMonth);
+    if (relaxed === "none") return result;
+    if (relaxed === "recent") {
+      const skipped = pool.filter((s) => satRecent.has(s.doctor.name) && !satThisMonth.has(s.doctor.name)).map((s) => s.doctor.name);
+      if (skipped.length > 0) warnings.push(`${dateStr} ${label}[Soft緩和]: 土曜2か月制限を無視（他Step候補なし）→ ${skipped.join(", ")}`);
+      return result;
+    }
+    // relaxed === "all": 同月2回目が必要 → このStepは使わずnullを返して次Stepへ
+    return null;
+  };
+
   // Step 1: 3〜5年目（1・2回目）＋ 10年目以上の日直のみ（hasChildcare）未割当
-  const step1 = candidates.filter(
+  const step1base = candidates.filter(
     (s) =>
       (years(s) >= 3 && years(s) <= 5 && s.weekendHolidayCount < 2) ||
       (years(s) >= 10 && s.doctor.hasChildcare === true && s.shiftCount === 0)
   );
-  if (step1.length > 0) return step1;
+  const step1 = tryStep(step1base);
+  if (step1) return step1;
 
   // Step 2: 6〜9年目 で週末1回目
-  const midFirst = candidates.filter(
+  const step2base = candidates.filter(
     (s) => years(s) >= 6 && years(s) <= 9 && s.weekendHolidayCount < 1
   );
-  if (midFirst.length > 0) return midFirst;
+  const step2 = tryStep(step2base);
+  if (step2) return step2;
 
   // Step 3: 10年目以上（当直可能）未割当
-  // 平日不足日に必要なシニアは除外（平日を優先）、不要なシニアは週末割り当て
-  const seniorOncallFree = candidates.filter(
+  const seniorOncallFreeBase = candidates.filter(
     (s) =>
       years(s) >= 10 &&
       !s.doctor.hasChildcare &&
       s.shiftCount === 0 &&
       !seniorReservedForWeekday.has(s.doctor.name)
   );
-  if (seniorOncallFree.length > 0) return seniorOncallFree;
+  const step3free = tryStep(seniorOncallFreeBase);
+  if (step3free) return step3free;
 
-  // 平日予約済みシニアも全員使い果たした後は週末に割り当て可
-  const seniorOncallAny = candidates.filter(
+  const seniorOncallAnyBase = candidates.filter(
     (s) => years(s) >= 10 && !s.doctor.hasChildcare && s.shiftCount === 0
   );
-  if (seniorOncallAny.length > 0) return seniorOncallAny;
+  const step3any = tryStep(seniorOncallAnyBase);
+  if (step3any) return step3any;
 
   // Step 4: 6〜9年目 で週末2回目
-  const midJuniorSecond = candidates.filter(
+  const step4base = candidates.filter(
     (s) => years(s) >= 6 && years(s) <= 9 && s.weekendHolidayCount < 2
   );
-  if (midJuniorSecond.length > 0) return midJuniorSecond;
+  const step4 = tryStep(step4base);
+  if (step4) return step4;
+
+  // ここまで来た = 全StepのStep1候補が全員今月土曜済み → 同月2回を許容して最優先Stepから
+  if (step1base.length > 0) {
+    warnings.push(`${dateStr} ${label}[Soft緩和]: 土曜同月2回制限を無視（今月実施済みの医師しかいない）`);
+    return step1base;
+  }
+  if (step2base.length > 0) return step2base;
+  if (seniorOncallAnyBase.length > 0) return seniorOncallAnyBase;
+  if (step4base.length > 0) return step4base;
 
   // Step 5: 若手（9年目以下）で週末3回未満（緊急）
   const juniorThird = gapFiltered.filter(
@@ -221,7 +266,7 @@ export function generateSchedule(
       if (isWH) {
         const withSenior = candidates.filter(isSeniorAllowed);
         const seniorPool = withSenior.length > 0 ? withSenior : candidates;
-        candidates = applyWeekendFilters(seniorPool, gapFiltered, base, dateStr, "日直", warnings, seniorReservedForWeekday);
+        candidates = applyWeekendFilters(seniorPool, gapFiltered, base, dateStr, "日直", warnings, seniorReservedForWeekday, dayType, satRecent, satThisMonth);
       } else {
         const allowed = candidates.filter(isSeniorAllowed);
         const juniorOnly = allowed.filter(isJunior);
@@ -284,27 +329,8 @@ export function generateSchedule(
       if (isWH) {
         const withSenior = candidates.filter(isSeniorAllowed);
         const seniorPool = withSenior.length > 0 ? withSenior : candidates;
-        candidates = applyWeekendFilters(seniorPool, gapFiltered, base, dateStr, "当直", warnings, seniorReservedForWeekday);
-
-        // 土曜当直は2か月に1回制限（soft）- Softフィルターより先に適用
-        if (dayType === "saturday") {
-          const preferred = candidates.filter(
-            (s) => !satRecent.has(s.doctor.name) && !satThisMonth.has(s.doctor.name)
-          );
-          if (preferred.length > 0) {
-            candidates = preferred;
-          } else {
-            const fallback = candidates.filter((s) => !satThisMonth.has(s.doctor.name));
-            if (fallback.length > 0) {
-              candidates = fallback;
-              const skipped = candidates.filter((s) => satRecent.has(s.doctor.name)).map((s) => s.doctor.name);
-              if (skipped.length > 0) warnings.push(`${dateStr} 当直[Soft緩和]: 土曜2か月制限を無視（先月実施済みだが他候補なし）→ ${skipped.join(", ")}`);
-            } else {
-              // 今月2回目も許容（全員が今月実施済み）
-              warnings.push(`${dateStr} 当直[Soft緩和]: 土曜同月2回制限を無視（今月実施済みの医師しかいない）`);
-            }
-          }
-        }
+        // 土曜制限をStep選択に組み込んだapplyWeekendFiltersで処理
+        candidates = applyWeekendFilters(seniorPool, gapFiltered, base, dateStr, "当直", warnings, seniorReservedForWeekday, dayType, satRecent, satThisMonth);
 
         // 2週連続土日当直を避ける（soft）- 8日未満は連続週末とみなす
         const noConsecutiveWeekend = candidates.filter(
