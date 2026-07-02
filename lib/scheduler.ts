@@ -286,15 +286,23 @@ export function generateSchedule(
         const seniorPool = withSenior.length > 0 ? withSenior : candidates;
         candidates = applyWeekendFilters(seniorPool, gapFiltered, base, dateStr, "当直", warnings, seniorReservedForWeekday);
 
-        // 土曜当直は3か月に1回制限（soft）- Softフィルターより先に適用
+        // 土曜当直は2か月に1回制限（soft）- Softフィルターより先に適用
         if (dayType === "saturday") {
           const preferred = candidates.filter(
             (s) => !satRecent.has(s.doctor.name) && !satThisMonth.has(s.doctor.name)
           );
-          if (preferred.length > 0) candidates = preferred;
-          else {
+          if (preferred.length > 0) {
+            candidates = preferred;
+          } else {
             const fallback = candidates.filter((s) => !satThisMonth.has(s.doctor.name));
-            if (fallback.length > 0) candidates = fallback;
+            if (fallback.length > 0) {
+              candidates = fallback;
+              const skipped = candidates.filter((s) => satRecent.has(s.doctor.name)).map((s) => s.doctor.name);
+              if (skipped.length > 0) warnings.push(`${dateStr} 当直[Soft緩和]: 土曜2か月制限を無視（先月実施済みだが他候補なし）→ ${skipped.join(", ")}`);
+            } else {
+              // 今月2回目も許容（全員が今月実施済み）
+              warnings.push(`${dateStr} 当直[Soft緩和]: 土曜同月2回制限を無視（今月実施済みの医師しかいない）`);
+            }
           }
         }
 
@@ -302,13 +310,25 @@ export function generateSchedule(
         const noConsecutiveWeekend = candidates.filter(
           (s) => !s.lastWeekendOncallDate || daysBetween(s.lastWeekendOncallDate, dateStr) >= 8
         );
-        if (noConsecutiveWeekend.length > 0) candidates = noConsecutiveWeekend;
+        if (noConsecutiveWeekend.length > 0) {
+          candidates = noConsecutiveWeekend;
+        } else {
+          const consecutive = candidates.filter(
+            (s) => s.lastWeekendOncallDate && daysBetween(s.lastWeekendOncallDate, dateStr) < 8
+          ).map((s) => `${s.doctor.name}(前回:${s.lastWeekendOncallDate})`);
+          if (consecutive.length > 0) warnings.push(`${dateStr} 当直[Soft緩和]: 2週連続土日当直を許容（他候補なし）→ ${consecutive.join(", ")}`);
+        }
 
         // 2か月で土日当直3回以内（soft）
         const recentUnder3 = candidates.filter(
           (s) => s.weekendOncallCount + s.weekendOncallLastMonth < 3
         );
-        if (recentUnder3.length > 0) candidates = recentUnder3;
+        if (recentUnder3.length > 0) {
+          candidates = recentUnder3;
+        } else {
+          const over3 = candidates.map((s) => `${s.doctor.name}(${s.weekendOncallCount + s.weekendOncallLastMonth}回)`);
+          warnings.push(`${dateStr} 当直[Soft緩和]: 2か月3回超えを許容（他候補なし）→ ${over3.join(", ")}`);
+        }
       } else {
         // 平日：シニアは常にshiftCount=0のみ候補（月1回上限を厳守）
         // 若手が3人超なら若手のみ、2人以下ならシニア未割当も含める
