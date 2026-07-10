@@ -1,14 +1,14 @@
 "use client";
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { Doctor, Schedule, CustomHoliday, Carryover } from "@/lib/types";
+import { Doctor, Schedule, CustomHoliday, Carryover, LockedSlots } from "@/lib/types";
 import {
   loadDoctors, saveSchedule, loadSchedule, deleteSchedule,
   loadCustomHolidays, saveCustomHolidays,
   loadCarryover, saveCarryover, prevMonth, purgeExpiredData, deleteDoctor,
 } from "@/lib/storage";
 import { generateSchedule } from "@/lib/scheduler";
-import { getTargetUnits, getAdjustedTarget, getShiftUnits } from "@/lib/holidays";
+import { getTargetUnits, getAdjustedTarget, getShiftUnits, getDatesInPeriod, getDayType, toDateString } from "@/lib/holidays";
 import Calendar from "@/components/Calendar";
 import ScheduleTable from "@/components/ScheduleTable";
 import UnitCountChart from "@/components/UnitCountChart";
@@ -36,8 +36,59 @@ export default function AdminPage() {
   const [warnings, setWarnings] = useState<string[]>([]);
   const [viewMode, setViewMode] = useState<ViewMode>("calendar");
   const [loading, setLoading] = useState(false);
+  const [lockedSlots, setLockedSlots] = useState<LockedSlots>({});
+  const [showPreAssign, setShowPreAssign] = useState(false);
 
   useEffect(() => { purgeExpiredData(); }, []);
+
+  // lockedSlots を localStorage から読み込み
+  useEffect(() => {
+    const key = `lockedSlots_${year}_${month}`;
+    const stored = localStorage.getItem(key);
+    setLockedSlots(stored ? JSON.parse(stored) : {});
+  }, [year, month]);
+
+  function saveLockedSlots(next: LockedSlots) {
+    const key = `lockedSlots_${year}_${month}`;
+    localStorage.setItem(key, JSON.stringify(next));
+    setLockedSlots(next);
+  }
+
+  function handleLockSlot(date: string, field: "dayshift" | "oncall", lock: boolean) {
+    const next = { ...lockedSlots };
+    if (lock) {
+      const currentValue = schedule?.assignments.find((a) => a.date === date)?.[field] ?? null;
+      next[date] = { ...next[date], [field]: currentValue };
+    } else {
+      if (next[date]) {
+        const updated = { ...next[date] };
+        delete updated[field];
+        if (Object.keys(updated).length === 0) delete next[date];
+        else next[date] = updated;
+      }
+    }
+    saveLockedSlots(next);
+  }
+
+  function handlePreAssignChange(date: string, field: "dayshift" | "oncall", value: string | null) {
+    const next = { ...lockedSlots };
+    if (value === null) {
+      if (next[date]) {
+        const updated = { ...next[date] };
+        delete updated[field];
+        if (Object.keys(updated).length === 0) delete next[date];
+        else next[date] = updated;
+      }
+    } else {
+      next[date] = { ...next[date], [field]: value };
+    }
+    saveLockedSlots(next);
+  }
+
+  function clearAllLocks() {
+    if (!confirm("すべての事前確定を解除しますか？")) return;
+    saveLockedSlots({});
+  }
 
   useEffect(() => {
     if (!authed) return;
@@ -64,7 +115,7 @@ export default function AdminPage() {
 
   async function handleGenerate() {
     const { schedule: newSchedule, warnings: newWarnings, newCarryover } = generateSchedule(
-      year, month, doctors, customHolidays, carryover
+      year, month, doctors, customHolidays, carryover, lockedSlots
     );
     await Promise.all([
       saveSchedule(year, month, newSchedule),
@@ -366,6 +417,88 @@ export default function AdminPage() {
           )}
         </div>
 
+        {/* 事前割り当て確定 */}
+        <div className="bg-white rounded-xl shadow-sm p-6">
+          <div className="flex items-center justify-between mb-2">
+            <div>
+              <h2 className="font-semibold text-gray-700">事前割り当て確定</h2>
+              <p className="text-xs text-gray-400 mt-0.5">特定の医師を先に確定させてから自動生成できます。🔒 マークのスロットは自動生成時に変更されません。</p>
+            </div>
+            <div className="flex items-center gap-2">
+              {Object.keys(lockedSlots).length > 0 && (
+                <span className="text-xs text-amber-600 font-medium">{Object.values(lockedSlots).reduce((n, s) => n + Object.keys(s).length, 0)}件 確定中</span>
+              )}
+              <button
+                onClick={() => setShowPreAssign((v) => !v)}
+                className="text-sm border rounded px-3 py-1.5 text-gray-600 hover:bg-gray-50"
+              >
+                {showPreAssign ? "閉じる ▲" : "入力する ▼"}
+              </button>
+              {Object.keys(lockedSlots).length > 0 && (
+                <button onClick={clearAllLocks} className="text-xs text-red-400 hover:text-red-600">すべて解除</button>
+              )}
+            </div>
+          </div>
+          {showPreAssign && doctors.length > 0 && (
+            <div className="mt-3 overflow-x-auto">
+              <table className="w-full text-sm border-collapse">
+                <thead>
+                  <tr className="bg-gray-100">
+                    <th className="border px-2 py-1 text-left">日付</th>
+                    <th className="border px-2 py-1">曜日</th>
+                    <th className="border px-2 py-1">種別</th>
+                    <th className="border px-2 py-1">日直（確定）</th>
+                    <th className="border px-2 py-1">当直（確定）</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {getDatesInPeriod(year, month).map((date) => {
+                    const dateStr = toDateString(date);
+                    const dayType = getDayType(date, customHolidays);
+                    const dow = ["日", "月", "火", "水", "木", "金", "土"][date.getDay()];
+                    const needsDayshift = dayType === "second-saturday" || dayType === "holiday";
+                    const lockedDay = lockedSlots[dateStr] ?? {};
+                    const bgClass = dayType === "holiday" ? "bg-pink-50" : dayType === "second-saturday" ? "bg-blue-50" : dayType === "saturday" ? "bg-cyan-50" : "";
+                    const dayTypeLabel: Record<string, string> = { weekday: "平日", saturday: "土曜", "second-saturday": "第2土", holiday: "休日" };
+                    return (
+                      <tr key={dateStr} className={`border-b ${bgClass}`}>
+                        <td className="border px-2 py-1 whitespace-nowrap text-xs">{dateStr}</td>
+                        <td className={`border px-2 py-1 text-center text-xs ${date.getDay() === 0 ? "text-red-600" : date.getDay() === 6 ? "text-blue-600" : ""}`}>{dow}</td>
+                        <td className="border px-2 py-1 text-center text-xs">{dayTypeLabel[dayType]}</td>
+                        <td className="border px-2 py-1 text-center">
+                          {needsDayshift ? (
+                            <select
+                              value={lockedDay.dayshift ?? ""}
+                              onChange={(e) => handlePreAssignChange(dateStr, "dayshift", e.target.value || null)}
+                              className={`border rounded px-1 py-0.5 text-xs w-full ${lockedDay.dayshift ? "border-amber-400 bg-amber-50" : ""}`}
+                            >
+                              <option value="">（指定なし）</option>
+                              {doctors.map((d) => <option key={d.name} value={d.name}>{d.name}</option>)}
+                            </select>
+                          ) : <span className="text-gray-300 text-xs">—</span>}
+                        </td>
+                        <td className="border px-2 py-1 text-center">
+                          <select
+                            value={lockedDay.oncall ?? ""}
+                            onChange={(e) => handlePreAssignChange(dateStr, "oncall", e.target.value || null)}
+                            className={`border rounded px-1 py-0.5 text-xs w-full ${lockedDay.oncall ? "border-amber-400 bg-amber-50" : ""}`}
+                          >
+                            <option value="">（指定なし）</option>
+                            {doctors.filter((d) => !d.hasChildcare).map((d) => <option key={d.name} value={d.name}>{d.name}</option>)}
+                          </select>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {showPreAssign && doctors.length === 0 && (
+            <p className="text-gray-400 text-sm mt-2">医師データがありません。</p>
+          )}
+        </div>
+
         {/* 生成ボタン */}
         <div className="bg-white rounded-xl shadow-sm p-6">
           <div className="flex gap-3 flex-wrap items-center">
@@ -408,7 +541,17 @@ export default function AdminPage() {
               {viewMode === "calendar" ? (
                 <Calendar year={year} month={month} assignments={schedule.assignments} customHolidays={customHolidays} />
               ) : (
-                <ScheduleTable assignments={schedule.assignments} doctors={doctors} customHolidays={customHolidays} onChangeDayshift={handleChangeDayshift} onChangeOncall={handleChangeOncall} editable={true} />
+                <ScheduleTable
+                  assignments={schedule.assignments}
+                  doctors={doctors}
+                  customHolidays={customHolidays}
+                  onChangeDayshift={handleChangeDayshift}
+                  onChangeOncall={handleChangeOncall}
+                  onLockDayshift={(date, lock) => handleLockSlot(date, "dayshift", lock)}
+                  onLockOncall={(date, lock) => handleLockSlot(date, "oncall", lock)}
+                  lockedSlots={lockedSlots}
+                  editable={true}
+                />
               )}
             </div>
             {doctors.length > 0 && (

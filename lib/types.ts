@@ -28,7 +28,11 @@ export interface Assignment {
   dayType: DayType;
   dayshift: string | null;
   oncall: string | null;
+  lockedDayshift?: boolean; // 事前確定: 自動生成時に変更しない
+  lockedOncall?: boolean;   // 事前確定: 自動生成時に変更しない
 }
+
+export type LockedSlots = Record<string, { dayshift?: string | null; oncall?: string | null }>;
 
 export interface Schedule {
   period: { startYear: number; startMonth: number };

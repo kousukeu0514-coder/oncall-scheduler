@@ -1,5 +1,5 @@
 "use client";
-import { Assignment, Doctor, CustomHoliday } from "@/lib/types";
+import { Assignment, Doctor, CustomHoliday, LockedSlots } from "@/lib/types";
 
 const DAY_TYPE_LABELS: Record<Assignment["dayType"], string> = {
   weekday: "平日",
@@ -14,6 +14,9 @@ interface ScheduleTableProps {
   customHolidays: CustomHoliday[];
   onChangeDayshift?: (date: string, name: string | null) => void;
   onChangeOncall?: (date: string, name: string | null) => void;
+  onLockDayshift?: (date: string, locked: boolean) => void;
+  onLockOncall?: (date: string, locked: boolean) => void;
+  lockedSlots?: LockedSlots;
   editable?: boolean;
 }
 
@@ -32,6 +35,9 @@ export default function ScheduleTable({
   customHolidays,
   onChangeDayshift,
   onChangeOncall,
+  onLockDayshift,
+  onLockOncall,
+  lockedSlots,
   editable = false,
 }: ScheduleTableProps) {
   const doctorNames = ["（なし）", ...doctors.map((d) => d.name)];
@@ -54,6 +60,8 @@ export default function ScheduleTable({
             const dow = ["日", "月", "火", "水", "木", "金", "土"][date.getDay()];
             const bg = getDayBgClass(a.dayType);
             const isCustom = customHolidays.some((h) => h.date === a.date);
+            const isDayshiftLocked = a.lockedDayshift || (lockedSlots?.[a.date] && "dayshift" in lockedSlots[a.date]);
+            const isOncallLocked = a.lockedOncall || (lockedSlots?.[a.date] && "oncall" in lockedSlots[a.date]);
 
             return (
               <tr key={a.date} className={`border-b ${bg}`}>
@@ -63,36 +71,68 @@ export default function ScheduleTable({
                 </td>
                 <td className={`border px-2 py-1 text-center ${date.getDay() === 0 ? "text-red-600" : date.getDay() === 6 ? "text-blue-600" : ""}`}>{dow}</td>
                 <td className="border px-2 py-1 text-center text-xs">{DAY_TYPE_LABELS[a.dayType]}</td>
+
+                {/* 日直 */}
                 <td className="border px-2 py-1 text-center">
                   {a.dayType === "weekday" || a.dayType === "saturday" ? (
                     <span className="text-gray-300">—</span>
                   ) : editable ? (
-                    <select
-                      value={a.dayshift ?? ""}
-                      onChange={(e) => onChangeDayshift?.(a.date, e.target.value || null)}
-                      className="border rounded px-1 py-0.5 text-xs w-full"
-                    >
-                      {doctorNames.map((n) => (
-                        <option key={n} value={n === "（なし）" ? "" : n}>{n}</option>
-                      ))}
-                    </select>
+                    <div className="flex items-center gap-1">
+                      <select
+                        value={a.dayshift ?? ""}
+                        onChange={(e) => onChangeDayshift?.(a.date, e.target.value || null)}
+                        className={`border rounded px-1 py-0.5 text-xs flex-1 ${isDayshiftLocked ? "border-amber-400 bg-amber-50" : ""}`}
+                      >
+                        {doctorNames.map((n) => (
+                          <option key={n} value={n === "（なし）" ? "" : n}>{n}</option>
+                        ))}
+                      </select>
+                      {onLockDayshift && (
+                        <button
+                          onClick={() => onLockDayshift(a.date, !isDayshiftLocked)}
+                          title={isDayshiftLocked ? "確定を解除" : "確定する"}
+                          className={`text-xs px-1 rounded ${isDayshiftLocked ? "text-amber-600 hover:text-gray-400" : "text-gray-300 hover:text-amber-500"}`}
+                        >
+                          {isDayshiftLocked ? "🔒" : "🔓"}
+                        </button>
+                      )}
+                    </div>
                   ) : (
-                    <span>{a.dayshift ?? "未定"}</span>
+                    <span className={isDayshiftLocked ? "font-medium" : ""}>
+                      {isDayshiftLocked && <span className="mr-0.5 text-amber-500">🔒</span>}
+                      {a.dayshift ?? "未定"}
+                    </span>
                   )}
                 </td>
+
+                {/* 当直 */}
                 <td className="border px-2 py-1 text-center">
                   {editable ? (
-                    <select
-                      value={a.oncall ?? ""}
-                      onChange={(e) => onChangeOncall?.(a.date, e.target.value || null)}
-                      className="border rounded px-1 py-0.5 text-xs w-full"
-                    >
-                      {doctorNames.map((n) => (
-                        <option key={n} value={n === "（なし）" ? "" : n}>{n}</option>
-                      ))}
-                    </select>
+                    <div className="flex items-center gap-1">
+                      <select
+                        value={a.oncall ?? ""}
+                        onChange={(e) => onChangeOncall?.(a.date, e.target.value || null)}
+                        className={`border rounded px-1 py-0.5 text-xs flex-1 ${isOncallLocked ? "border-amber-400 bg-amber-50" : ""}`}
+                      >
+                        {doctorNames.map((n) => (
+                          <option key={n} value={n === "（なし）" ? "" : n}>{n}</option>
+                        ))}
+                      </select>
+                      {onLockOncall && (
+                        <button
+                          onClick={() => onLockOncall(a.date, !isOncallLocked)}
+                          title={isOncallLocked ? "確定を解除" : "確定する"}
+                          className={`text-xs px-1 rounded ${isOncallLocked ? "text-amber-600 hover:text-gray-400" : "text-gray-300 hover:text-amber-500"}`}
+                        >
+                          {isOncallLocked ? "🔒" : "🔓"}
+                        </button>
+                      )}
+                    </div>
                   ) : (
-                    <span>{a.oncall ?? "未定"}</span>
+                    <span className={isOncallLocked ? "font-medium" : ""}>
+                      {isOncallLocked && <span className="mr-0.5 text-amber-500">🔒</span>}
+                      {a.oncall ?? "未定"}
+                    </span>
                   )}
                 </td>
               </tr>

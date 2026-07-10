@@ -1,4 +1,4 @@
-import { Doctor, Schedule, Assignment, CustomHoliday, Carryover } from "./types";
+import { Doctor, Schedule, Assignment, CustomHoliday, Carryover, LockedSlots } from "./types";
 import {
   getDatesInPeriod,
   getDayType,
@@ -167,7 +167,8 @@ export function generateSchedule(
   month: number,
   doctors: Doctor[],
   customHolidays: CustomHoliday[] = [],
-  carryover: Carryover = {}
+  carryover: Carryover = {},
+  lockedSlots: LockedSlots = {}
 ): { schedule: Schedule; warnings: string[]; newCarryover: Carryover } {
   const dates = getDatesInPeriod(year, month);
   const assignments: Assignment[] = [];
@@ -243,144 +244,166 @@ export function generateSchedule(
     const needsDayshift = dayType === "second-saturday" || dayType === "holiday";
     const isWH = isWeekendOrHoliday(date, customHolidays);
 
+    const locked = lockedSlots[dateStr] ?? {};
     const assignment: Assignment = { date: dateStr, dayType, dayshift: null, oncall: null };
 
     // ── 日直 ──────────────────────────────────────────────────
     if (needsDayshift) {
-      const prevDateStr = toDateString(new Date(date.getTime() - 86400000));
-      const prevAssignment = assignMap.get(prevDateStr);
-
-      const base = states.filter((s) => {
-        if (s.accumulated + getShiftUnits(dayType, "dayshift") > HARD_MAX) return false;
-        if (s.doctor.unavailableDates.dayshift.includes(dateStr)) return false;
-        if (prevAssignment?.oncall === s.doctor.name) return false;
-        return true;
-      });
-
-      const gapFiltered = base.filter((s) => hasEnoughGap(s, dateStr));
-      let candidates = gapFiltered.length > 0 ? gapFiltered : (() => {
-        warnings.push(`${dateStr} 日直: 間隔制限を緩めて割り当てます`);
-        return base;
-      })();
-
-      if (isWH) {
-        const withSenior = candidates.filter(isSeniorAllowed);
-        const seniorPool = withSenior.length > 0 ? withSenior : candidates;
-        candidates = applyWeekendFilters(seniorPool, gapFiltered, base, dateStr, "日直", warnings, seniorReservedForWeekday, dayType, satRecent, satThisMonth);
-      } else {
-        const allowed = candidates.filter(isSeniorAllowed);
-        const juniorOnly = allowed.filter(isJunior);
-        candidates = juniorOnly.length > 2 ? juniorOnly : (allowed.length > 0 ? allowed : candidates);
-      }
-
-      // 日直のみ医師：月1回確保を最優先、次に目標未達を優先
-      const childcareUnassigned = candidates.filter(
-        (s) => s.doctor.hasChildcare === true && s.shiftCount === 0
-      );
-      const childcareUnder = candidates.filter(
-        (s) => s.doctor.hasChildcare === true && s.accumulated < s.target
-      );
-      const dayshiftPool =
-        childcareUnassigned.length > 0 ? childcareUnassigned :
-        childcareUnder.length > 0 ? childcareUnder :
-        candidates;
-
-      const chosen = pickBest(dayshiftPool);
-      if (chosen) {
-        assignment.dayshift = chosen.doctor.name;
-        chosen.accumulated += getShiftUnits(dayType, "dayshift");
-        chosen.shiftCount++;
-        if (isWH) {
-          chosen.weekendHolidayCount++;
-          chosen.weekendHolidayTotal++;
+      if ("dayshift" in locked) {
+        // 事前確定スロット: そのまま使用し doctor state を更新
+        assignment.dayshift = locked.dayshift ?? null;
+        assignment.lockedDayshift = true;
+        if (locked.dayshift) {
+          const s = states.find((s) => s.doctor.name === locked.dayshift);
+          if (s) {
+            s.accumulated += getShiftUnits(dayType, "dayshift");
+            s.shiftCount++;
+            if (isWH) { s.weekendHolidayCount++; s.weekendHolidayTotal++; }
+            s.lastShiftDate = dateStr;
+          }
         }
-        chosen.lastShiftDate = dateStr;
       } else {
-        warnings.push(`${dateStr} 日直: 割り当て可能な医師がいません`);
+        const prevDateStr = toDateString(new Date(date.getTime() - 86400000));
+        const prevAssignment = assignMap.get(prevDateStr);
+
+        const base = states.filter((s) => {
+          if (s.accumulated + getShiftUnits(dayType, "dayshift") > HARD_MAX) return false;
+          if (s.doctor.unavailableDates.dayshift.includes(dateStr)) return false;
+          if (prevAssignment?.oncall === s.doctor.name) return false;
+          return true;
+        });
+
+        const gapFiltered = base.filter((s) => hasEnoughGap(s, dateStr));
+        let candidates = gapFiltered.length > 0 ? gapFiltered : (() => {
+          warnings.push(`${dateStr} 日直: 間隔制限を緩めて割り当てます`);
+          return base;
+        })();
+
+        if (isWH) {
+          const withSenior = candidates.filter(isSeniorAllowed);
+          const seniorPool = withSenior.length > 0 ? withSenior : candidates;
+          candidates = applyWeekendFilters(seniorPool, gapFiltered, base, dateStr, "日直", warnings, seniorReservedForWeekday, dayType, satRecent, satThisMonth);
+        } else {
+          const allowed = candidates.filter(isSeniorAllowed);
+          const juniorOnly = allowed.filter(isJunior);
+          candidates = juniorOnly.length > 2 ? juniorOnly : (allowed.length > 0 ? allowed : candidates);
+        }
+
+        const childcareUnassigned = candidates.filter(
+          (s) => s.doctor.hasChildcare === true && s.shiftCount === 0
+        );
+        const childcareUnder = candidates.filter(
+          (s) => s.doctor.hasChildcare === true && s.accumulated < s.target
+        );
+        const dayshiftPool =
+          childcareUnassigned.length > 0 ? childcareUnassigned :
+          childcareUnder.length > 0 ? childcareUnder :
+          candidates;
+
+        const chosen = pickBest(dayshiftPool);
+        if (chosen) {
+          assignment.dayshift = chosen.doctor.name;
+          chosen.accumulated += getShiftUnits(dayType, "dayshift");
+          chosen.shiftCount++;
+          if (isWH) { chosen.weekendHolidayCount++; chosen.weekendHolidayTotal++; }
+          chosen.lastShiftDate = dateStr;
+        } else {
+          warnings.push(`${dateStr} 日直: 割り当て可能な医師がいません`);
+        }
       }
     }
 
     // ── 当直 ──────────────────────────────────────────────────
     {
-      const prevDateStr = toDateString(new Date(date.getTime() - 86400000));
-      const prevAssignment = assignMap.get(prevDateStr);
-
-      const base = states.filter((s) => {
-        if (s.accumulated + getShiftUnits(dayType, "oncall") > HARD_MAX) return false;
-        if (s.doctor.hasChildcare === true) return false;
-        if (s.doctor.unavailableDates.oncall.includes(dateStr)) return false;
-        if (prevAssignment?.oncall === s.doctor.name) return false;
-        if (assignment.dayshift === s.doctor.name) return false;
-        return true;
-      });
-
-      const gapFiltered = base.filter((s) => hasEnoughGap(s, dateStr));
-      let candidates = gapFiltered.length > 0 ? gapFiltered : (() => {
-        warnings.push(`${dateStr} 当直: 間隔制限を緩めて割り当てます`);
-        return base;
-      })();
-
-      // 当直-当直間は中2日以上（soft）
-      const oncallGapPreferred = candidates.filter(
-        (s) => !s.lastOncallDate || daysBetween(s.lastOncallDate, dateStr) >= 3
-      );
-      if (oncallGapPreferred.length > 0) candidates = oncallGapPreferred;
-
-      if (isWH) {
-        const withSenior = candidates.filter(isSeniorAllowed);
-        const seniorPool = withSenior.length > 0 ? withSenior : candidates;
-        // 土曜制限をStep選択に組み込んだapplyWeekendFiltersで処理
-        candidates = applyWeekendFilters(seniorPool, gapFiltered, base, dateStr, "当直", warnings, seniorReservedForWeekday, dayType, satRecent, satThisMonth);
-
-        // 2週連続土日当直を避ける（soft）- 8日未満は連続週末とみなす
-        const noConsecutiveWeekend = candidates.filter(
-          (s) => !s.lastWeekendOncallDate || daysBetween(s.lastWeekendOncallDate, dateStr) >= 8
-        );
-        if (noConsecutiveWeekend.length > 0) {
-          candidates = noConsecutiveWeekend;
-        } else {
-          const consecutive = candidates.filter(
-            (s) => s.lastWeekendOncallDate && daysBetween(s.lastWeekendOncallDate, dateStr) < 8
-          ).map((s) => `${s.doctor.name}(前回:${s.lastWeekendOncallDate})`);
-          if (consecutive.length > 0) warnings.push(`${dateStr} 当直[Soft緩和]: 2週連続土日当直を許容（他候補なし）→ ${consecutive.join(", ")}`);
-        }
-
-        // 2か月で土日当直3回以内（soft）
-        const recentUnder3 = candidates.filter(
-          (s) => s.weekendOncallCount + s.weekendOncallLastMonth < 3
-        );
-        if (recentUnder3.length > 0) {
-          candidates = recentUnder3;
-        } else {
-          const over3 = candidates.map((s) => `${s.doctor.name}(${s.weekendOncallCount + s.weekendOncallLastMonth}回)`);
-          warnings.push(`${dateStr} 当直[Soft緩和]: 2か月3回超えを許容（他候補なし）→ ${over3.join(", ")}`);
+      if ("oncall" in locked) {
+        // 事前確定スロット: そのまま使用し doctor state を更新
+        assignment.oncall = locked.oncall ?? null;
+        assignment.lockedOncall = true;
+        if (locked.oncall) {
+          const s = states.find((s) => s.doctor.name === locked.oncall);
+          if (s) {
+            s.accumulated += getShiftUnits(dayType, "oncall");
+            s.shiftCount++;
+            if (isWH) {
+              s.weekendHolidayCount++;
+              s.weekendHolidayTotal++;
+              s.weekendOncallCount++;
+              s.lastWeekendOncallDate = dateStr;
+            }
+            s.lastShiftDate = dateStr;
+            s.lastOncallDate = dateStr;
+            if (dayType === "saturday") satThisMonth.add(locked.oncall);
+          }
         }
       } else {
-        // 平日：シニアは常にshiftCount=0のみ候補（月1回上限を厳守）
-        // 若手が3人超なら若手のみ、2人以下ならシニア未割当も含める
-        const allowed = candidates.filter(isSeniorAllowed);
-        const juniorOnly = allowed.filter(isJunior);
-        candidates = juniorOnly.length > 2 ? juniorOnly : (allowed.length > 0 ? allowed : candidates);
-      }
+        const prevDateStr = toDateString(new Date(date.getTime() - 86400000));
+        const prevAssignment = assignMap.get(prevDateStr);
 
-      const chosen = pickBest(candidates);
-      if (chosen) {
-        assignment.oncall = chosen.doctor.name;
-        chosen.accumulated += getShiftUnits(dayType, "oncall");
-        chosen.shiftCount++;
+        const base = states.filter((s) => {
+          if (s.accumulated + getShiftUnits(dayType, "oncall") > HARD_MAX) return false;
+          if (s.doctor.hasChildcare === true) return false;
+          if (s.doctor.unavailableDates.oncall.includes(dateStr)) return false;
+          if (prevAssignment?.oncall === s.doctor.name) return false;
+          if (assignment.dayshift === s.doctor.name) return false;
+          return true;
+        });
+
+        const gapFiltered = base.filter((s) => hasEnoughGap(s, dateStr));
+        let candidates = gapFiltered.length > 0 ? gapFiltered : (() => {
+          warnings.push(`${dateStr} 当直: 間隔制限を緩めて割り当てます`);
+          return base;
+        })();
+
+        const oncallGapPreferred = candidates.filter(
+          (s) => !s.lastOncallDate || daysBetween(s.lastOncallDate, dateStr) >= 3
+        );
+        if (oncallGapPreferred.length > 0) candidates = oncallGapPreferred;
+
         if (isWH) {
-          chosen.weekendHolidayCount++;
-          chosen.weekendHolidayTotal++;
+          const withSenior = candidates.filter(isSeniorAllowed);
+          const seniorPool = withSenior.length > 0 ? withSenior : candidates;
+          candidates = applyWeekendFilters(seniorPool, gapFiltered, base, dateStr, "当直", warnings, seniorReservedForWeekday, dayType, satRecent, satThisMonth);
+
+          const noConsecutiveWeekend = candidates.filter(
+            (s) => !s.lastWeekendOncallDate || daysBetween(s.lastWeekendOncallDate, dateStr) >= 8
+          );
+          if (noConsecutiveWeekend.length > 0) {
+            candidates = noConsecutiveWeekend;
+          } else {
+            const consecutive = candidates.filter(
+              (s) => s.lastWeekendOncallDate && daysBetween(s.lastWeekendOncallDate, dateStr) < 8
+            ).map((s) => `${s.doctor.name}(前回:${s.lastWeekendOncallDate})`);
+            if (consecutive.length > 0) warnings.push(`${dateStr} 当直[Soft緩和]: 2週連続土日当直を許容（他候補なし）→ ${consecutive.join(", ")}`);
+          }
+
+          const recentUnder3 = candidates.filter(
+            (s) => s.weekendOncallCount + s.weekendOncallLastMonth < 3
+          );
+          if (recentUnder3.length > 0) {
+            candidates = recentUnder3;
+          } else {
+            const over3 = candidates.map((s) => `${s.doctor.name}(${s.weekendOncallCount + s.weekendOncallLastMonth}回)`);
+            warnings.push(`${dateStr} 当直[Soft緩和]: 2か月3回超えを許容（他候補なし）→ ${over3.join(", ")}`);
+          }
+        } else {
+          const allowed = candidates.filter(isSeniorAllowed);
+          const juniorOnly = allowed.filter(isJunior);
+          candidates = juniorOnly.length > 2 ? juniorOnly : (allowed.length > 0 ? allowed : candidates);
         }
-        chosen.lastShiftDate = dateStr;
-        chosen.lastOncallDate = dateStr;
-        if (isWH) {
-          chosen.weekendOncallCount++;
-          chosen.lastWeekendOncallDate = dateStr;
+
+        const chosen = pickBest(candidates);
+        if (chosen) {
+          assignment.oncall = chosen.doctor.name;
+          chosen.accumulated += getShiftUnits(dayType, "oncall");
+          chosen.shiftCount++;
+          if (isWH) { chosen.weekendHolidayCount++; chosen.weekendHolidayTotal++; }
+          chosen.lastShiftDate = dateStr;
+          chosen.lastOncallDate = dateStr;
+          if (isWH) { chosen.weekendOncallCount++; chosen.lastWeekendOncallDate = dateStr; }
+          if (dayType === "saturday") satThisMonth.add(chosen.doctor.name);
+        } else {
+          warnings.push(`${dateStr} 当直: 割り当て可能な医師がいません`);
         }
-        if (dayType === "saturday") satThisMonth.add(chosen.doctor.name);
-      } else {
-        warnings.push(`${dateStr} 当直: 割り当て可能な医師がいません`);
       }
     }
 
