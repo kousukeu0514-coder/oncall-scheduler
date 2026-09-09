@@ -15,6 +15,7 @@ interface DoctorState {
   baseTarget: number;
   accumulated: number;
   shiftCount: number;
+  shiftTotal: number;            // 累積シフト回数（繰り越し含む）
   weekendHolidayCount: number;   // 今月の土日祝シフト回数（上限チェック用）
   weekendHolidayTotal: number;   // 累積土日祝回数（繰り越し含む、公平性ソート用）
   weekendOncallCount: number;    // 今月の土日祝当直回数（2か月3回制限用）
@@ -226,6 +227,7 @@ export function generateSchedule(
       baseTarget,
       accumulated: 0,
       shiftCount: 0,
+      shiftTotal: carryover[`__sc__${doc.name}`] ?? 0,
       weekendHolidayCount: 0,
       weekendHolidayTotal: carryover[`${WH_PREFIX}${doc.name}`] ?? 0,
       weekendOncallCount: 0,
@@ -257,7 +259,7 @@ export function generateSchedule(
           const s = states.find((s) => s.doctor.name === locked.dayshift);
           if (s) {
             s.accumulated += getShiftUnits(dayType, "dayshift");
-            s.shiftCount++;
+            s.shiftCount++; s.shiftTotal++;
             if (isWH) { s.weekendHolidayCount++; s.weekendHolidayTotal++; }
             s.lastShiftDate = dateStr;
           }
@@ -304,7 +306,7 @@ export function generateSchedule(
         if (chosen) {
           assignment.dayshift = chosen.doctor.name;
           chosen.accumulated += getShiftUnits(dayType, "dayshift");
-          chosen.shiftCount++;
+          chosen.shiftCount++; chosen.shiftTotal++;
           if (isWH) { chosen.weekendHolidayCount++; chosen.weekendHolidayTotal++; }
           chosen.lastShiftDate = dateStr;
         } else {
@@ -323,7 +325,7 @@ export function generateSchedule(
           const s = states.find((s) => s.doctor.name === locked.oncall);
           if (s) {
             s.accumulated += getShiftUnits(dayType, "oncall");
-            s.shiftCount++;
+            s.shiftCount++; s.shiftTotal++;
             if (isWH) {
               s.weekendHolidayCount++;
               s.weekendHolidayTotal++;
@@ -395,7 +397,7 @@ export function generateSchedule(
         if (chosen) {
           assignment.oncall = chosen.doctor.name;
           chosen.accumulated += getShiftUnits(dayType, "oncall");
-          chosen.shiftCount++;
+          chosen.shiftCount++; chosen.shiftTotal++;
           if (isWH) { chosen.weekendHolidayCount++; chosen.weekendHolidayTotal++; }
           chosen.lastShiftDate = dateStr;
           chosen.lastOncallDate = dateStr;
@@ -430,8 +432,7 @@ export function generateSchedule(
     newCarryover[s.doctor.name] = Math.round((s.accumulated - s.baseTarget) * 10) / 10;
     newCarryover[`${WH_PREFIX}${s.doctor.name}`] = s.weekendHolidayTotal;
     newCarryover[`${WHO_PREFIX}${s.doctor.name}`] = s.weekendOncallCount;
-    const scCarryPrev = carryover[`__sc__${s.doctor.name}`] ?? 0;
-    newCarryover[`__sc__${s.doctor.name}`] = scCarryPrev + s.shiftCount;
+    newCarryover[`__sc__${s.doctor.name}`] = s.shiftTotal;
   });
   // 先月の __sat1__ を __sat2__ に繰り上げ
   Object.entries(carryover)
@@ -445,11 +446,15 @@ export function generateSchedule(
     newCarryover[`${SAT1_PREFIX}${name}`] = 1;
   });
 
+  const shiftTotals: Record<string, number> = {};
+  states.forEach((s) => { shiftTotals[s.doctor.name] = s.shiftTotal; });
+
   const schedule: Schedule = {
     period: { startYear: year, startMonth: month },
     assignments,
     unitCounts,
     weekendHolidayCounts,
+    shiftTotals,
     savedAt: new Date().toISOString(),
   };
 

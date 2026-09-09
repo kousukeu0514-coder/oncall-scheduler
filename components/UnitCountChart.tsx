@@ -3,7 +3,6 @@ import { Doctor, Carryover, Assignment } from "@/lib/types";
 import { getTargetUnits, getAdjustedTarget } from "@/lib/holidays";
 
 const WH_PREFIX = "__wh__";
-const SC_PREFIX = "__sc__"; // 累積シフト回数
 
 interface UnitCountChartProps {
   doctors: Doctor[];
@@ -11,9 +10,10 @@ interface UnitCountChartProps {
   weekendHolidayCounts: Record<string, number>;
   carryover: Carryover;
   assignments?: Assignment[];
+  shiftTotals?: Record<string, number>;
 }
 
-export default function UnitCountChart({ doctors, unitCounts, weekendHolidayCounts, carryover, assignments = [] }: UnitCountChartProps) {
+export default function UnitCountChart({ doctors, unitCounts, weekendHolidayCounts, carryover, assignments = [], shiftTotals }: UnitCountChartProps) {
   // 今月の合計シフト回数を assignments から計算
   const shiftCountsThisMonth: Record<string, number> = {};
   for (const a of assignments) {
@@ -35,8 +35,8 @@ export default function UnitCountChart({ doctors, unitCounts, weekendHolidayCoun
     const shiftCount = shiftCountsThisMonth[doc.name] ?? 0;
     const weekdayCount = shiftCount - whCount;
     // 累積合計回数: carryoverの __sc__ キー（前月までの累積）＋今月分
-    const scCarry = carryover[`${SC_PREFIX}${doc.name}`] ?? 0;
-    const shiftTotal = scCarry + shiftCount;
+    // shiftTotalsが渡されれば（生成後）それを優先、なければassignmentsから計算した今月分のみ
+    const shiftTotal = shiftTotals ? (shiftTotals[doc.name] ?? shiftCount) : shiftCount;
     return { doc, target, actual, diff, whCount, whTotal, shiftCount, weekdayCount, shiftTotal };
   });
 

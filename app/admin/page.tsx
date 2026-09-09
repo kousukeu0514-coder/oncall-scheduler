@@ -557,7 +557,7 @@ export default function AdminPage() {
             {doctors.length > 0 && (
               <div className="bg-white rounded-xl shadow-sm p-6">
                 <h2 className="font-semibold text-gray-700 mb-4">コマ数カウント</h2>
-                <UnitCountChart doctors={doctors} unitCounts={schedule.unitCounts} weekendHolidayCounts={schedule.weekendHolidayCounts ?? {}} carryover={carryover} assignments={schedule.assignments} />
+                <UnitCountChart doctors={doctors} unitCounts={schedule.unitCounts} weekendHolidayCounts={schedule.weekendHolidayCounts ?? {}} carryover={carryover} assignments={schedule.assignments} shiftTotals={schedule.shiftTotals} />
               </div>
             )}
           </>

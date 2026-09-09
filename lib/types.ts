@@ -40,6 +40,8 @@ export interface Schedule {
   unitCounts: Record<string, number>;
   // 土日祝シフト回数（公平性確認用）
   weekendHolidayCounts: Record<string, number>;
+  // 累積シフト回数（前月繰り越し含む）
+  shiftTotals?: Record<string, number>;
   savedAt: string;
 }
 
