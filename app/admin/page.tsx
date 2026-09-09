@@ -102,6 +102,19 @@ export default function AdminPage() {
       loadCarryover(prev.year, prev.month),
       // 過去最大12か月分のスケジュールを遡って累積シフト回数を計算
       (async () => {
+        // まず現在の医師リストを取得して名前正規化マップを作成
+        const currentDocs = await loadDoctors(year, month);
+        const currentNames = currentDocs.map((d) => d.name);
+        // 旧名→現名へのマップ: 旧名が現名の先頭部分に一致する場合にマージ
+        const nameMap: Record<string, string> = {};
+        const normalizeName = (name: string) => {
+          if (currentNames.includes(name)) return name;
+          // 現在の医師名の中で、旧名を前方一致で含むものを探す
+          const matched = currentNames.find((n) => n.startsWith(name) || name.startsWith(n));
+          if (matched) nameMap[name] = matched;
+          return matched ?? name;
+        };
+
         const totals: Record<string, number> = {};
         let y = year, m = month;
         let consecutiveMissing = 0;
@@ -110,12 +123,18 @@ export default function AdminPage() {
           if (sched) {
             consecutiveMissing = 0;
             for (const a of sched.assignments) {
-              if (a.dayshift) totals[a.dayshift] = (totals[a.dayshift] ?? 0) + 1;
-              if (a.oncall)   totals[a.oncall]   = (totals[a.oncall]   ?? 0) + 1;
+              if (a.dayshift) {
+                const n = normalizeName(a.dayshift);
+                totals[n] = (totals[n] ?? 0) + 1;
+              }
+              if (a.oncall) {
+                const n = normalizeName(a.oncall);
+                totals[n] = (totals[n] ?? 0) + 1;
+              }
             }
           } else {
             consecutiveMissing++;
-            if (consecutiveMissing >= 2) break; // 2か月連続でなければ終了
+            if (consecutiveMissing >= 2) break;
           }
           const p = prevMonth(y, m);
           y = p.year; m = p.month;
