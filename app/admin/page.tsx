@@ -105,14 +105,20 @@ export default function AdminPage() {
         // まず現在の医師リストを取得して名前正規化マップを作成
         const currentDocs = await loadDoctors(year, month);
         const currentNames = currentDocs.map((d) => d.name);
-        // 旧名→現名へのマップ: 旧名が現名の先頭部分に一致する場合にマージ
-        const nameMap: Record<string, string> = {};
+        // スペースを除去して比較するための正規化
+        const strip = (s: string) => s.replace(/\s+/g, "");
+        const strippedCurrentNames = currentNames.map(strip);
         const normalizeName = (name: string) => {
           if (currentNames.includes(name)) return name;
-          // 現在の医師名の中で、旧名を前方一致で含むものを探す
-          const matched = currentNames.find((n) => n.startsWith(name) || name.startsWith(n));
-          if (matched) nameMap[name] = matched;
-          return matched ?? name;
+          // スペース除去後に一致する現在の医師名を探す
+          const strippedName = strip(name);
+          const exactIdx = strippedCurrentNames.indexOf(strippedName);
+          if (exactIdx >= 0) return currentNames[exactIdx];
+          // 前方一致（旧名が短縮形の場合）
+          const prefixIdx = strippedCurrentNames.findIndex(
+            (n) => n.startsWith(strippedName) || strippedName.startsWith(n)
+          );
+          return prefixIdx >= 0 ? currentNames[prefixIdx] : name;
         };
 
         const totals: Record<string, number> = {};
