@@ -33,6 +33,7 @@ export default function AdminPage() {
   const [schedule, setSchedule] = useState<Schedule | null>(null);
   const [customHolidays, setCustomHolidays] = useState<CustomHoliday[]>([]);
   const [carryover, setCarryover] = useState<Carryover>({});
+  const [cumulativeShiftTotals, setCumulativeShiftTotals] = useState<Record<string, number>>({});
   const [warnings, setWarnings] = useState<string[]>([]);
   const [viewMode, setViewMode] = useState<ViewMode>("calendar");
   const [loading, setLoading] = useState(false);
@@ -99,11 +100,34 @@ export default function AdminPage() {
       loadSchedule(year, month),
       loadCustomHolidays(year, month),
       loadCarryover(prev.year, prev.month),
-    ]).then(([docs, sched, holidays, carry]) => {
+      // 過去最大12か月分のスケジュールを遡って累積シフト回数を計算
+      (async () => {
+        const totals: Record<string, number> = {};
+        let y = year, m = month;
+        let consecutiveMissing = 0;
+        for (let i = 0; i < 12; i++) {
+          const sched = await loadSchedule(y, m);
+          if (sched) {
+            consecutiveMissing = 0;
+            for (const a of sched.assignments) {
+              if (a.dayshift) totals[a.dayshift] = (totals[a.dayshift] ?? 0) + 1;
+              if (a.oncall)   totals[a.oncall]   = (totals[a.oncall]   ?? 0) + 1;
+            }
+          } else {
+            consecutiveMissing++;
+            if (consecutiveMissing >= 2) break; // 2か月連続でなければ終了
+          }
+          const p = prevMonth(y, m);
+          y = p.year; m = p.month;
+        }
+        return totals;
+      })(),
+    ]).then(([docs, sched, holidays, carry, cumTotals]) => {
       setDoctors(docs);
       setSchedule(sched);
       setCustomHolidays(holidays);
       setCarryover(carry);
+      setCumulativeShiftTotals(cumTotals);
       setWarnings([]);
     }).finally(() => setLoading(false));
   }, [authed, year, month]);
@@ -557,7 +581,7 @@ export default function AdminPage() {
             {doctors.length > 0 && (
               <div className="bg-white rounded-xl shadow-sm p-6">
                 <h2 className="font-semibold text-gray-700 mb-4">コマ数カウント</h2>
-                <UnitCountChart doctors={doctors} unitCounts={schedule.unitCounts} weekendHolidayCounts={schedule.weekendHolidayCounts ?? {}} carryover={carryover} assignments={schedule.assignments} shiftTotals={schedule.shiftTotals} />
+                <UnitCountChart doctors={doctors} unitCounts={schedule.unitCounts} weekendHolidayCounts={schedule.weekendHolidayCounts ?? {}} carryover={carryover} assignments={schedule.assignments} shiftTotals={Object.keys(cumulativeShiftTotals).length > 0 ? cumulativeShiftTotals : schedule.shiftTotals} />
               </div>
             )}
           </>
