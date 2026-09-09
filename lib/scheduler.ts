@@ -430,6 +430,8 @@ export function generateSchedule(
     newCarryover[s.doctor.name] = Math.round((s.accumulated - s.baseTarget) * 10) / 10;
     newCarryover[`${WH_PREFIX}${s.doctor.name}`] = s.weekendHolidayTotal;
     newCarryover[`${WHO_PREFIX}${s.doctor.name}`] = s.weekendOncallCount;
+    const scCarryPrev = carryover[`__sc__${s.doctor.name}`] ?? 0;
+    newCarryover[`__sc__${s.doctor.name}`] = scCarryPrev + s.shiftCount;
   });
   // 先月の __sat1__ を __sat2__ に繰り上げ
   Object.entries(carryover)
