@@ -34,6 +34,7 @@ export default function AdminPage() {
   const [customHolidays, setCustomHolidays] = useState<CustomHoliday[]>([]);
   const [carryover, setCarryover] = useState<Carryover>({});
   const [cumulativeShiftTotals, setCumulativeShiftTotals] = useState<Record<string, number>>({});
+  const [cumulativeWhTotals, setCumulativeWhTotals] = useState<Record<string, number>>({});
   const [warnings, setWarnings] = useState<string[]>([]);
   const [viewMode, setViewMode] = useState<ViewMode>("calendar");
   const [loading, setLoading] = useState(false);
@@ -121,7 +122,9 @@ export default function AdminPage() {
           return prefixIdx >= 0 ? currentNames[prefixIdx] : name;
         };
 
+        const WH_TYPES = new Set(["saturday", "second-saturday", "holiday"]);
         const totals: Record<string, number> = {};
+        const whTotals: Record<string, number> = {};
         let y = year, m = month;
         let consecutiveMissing = 0;
         for (let i = 0; i < 12; i++) {
@@ -129,13 +132,16 @@ export default function AdminPage() {
           if (sched) {
             consecutiveMissing = 0;
             for (const a of sched.assignments) {
+              const isWH = WH_TYPES.has(a.dayType);
               if (a.dayshift) {
                 const n = normalizeName(a.dayshift);
                 totals[n] = (totals[n] ?? 0) + 1;
+                if (isWH) whTotals[n] = (whTotals[n] ?? 0) + 1;
               }
               if (a.oncall) {
                 const n = normalizeName(a.oncall);
                 totals[n] = (totals[n] ?? 0) + 1;
+                if (isWH) whTotals[n] = (whTotals[n] ?? 0) + 1;
               }
             }
           } else {
@@ -145,14 +151,15 @@ export default function AdminPage() {
           const p = prevMonth(y, m);
           y = p.year; m = p.month;
         }
-        return totals;
+        return { totals, whTotals };
       })(),
-    ]).then(([docs, sched, holidays, carry, cumTotals]) => {
+    ]).then(([docs, sched, holidays, carry, { totals: cumTotals, whTotals: cumWhTotals }]) => {
       setDoctors(docs);
       setSchedule(sched);
       setCustomHolidays(holidays);
       setCarryover(carry);
       setCumulativeShiftTotals(cumTotals);
+      setCumulativeWhTotals(cumWhTotals);
       setWarnings([]);
     }).finally(() => setLoading(false));
   }, [authed, year, month]);
@@ -606,7 +613,7 @@ export default function AdminPage() {
             {doctors.length > 0 && (
               <div className="bg-white rounded-xl shadow-sm p-6">
                 <h2 className="font-semibold text-gray-700 mb-4">コマ数カウント</h2>
-                <UnitCountChart doctors={doctors} unitCounts={schedule.unitCounts} weekendHolidayCounts={schedule.weekendHolidayCounts ?? {}} carryover={carryover} assignments={schedule.assignments} shiftTotals={Object.keys(cumulativeShiftTotals).length > 0 ? cumulativeShiftTotals : schedule.shiftTotals} />
+                <UnitCountChart doctors={doctors} unitCounts={schedule.unitCounts} weekendHolidayCounts={schedule.weekendHolidayCounts ?? {}} carryover={carryover} assignments={schedule.assignments} shiftTotals={Object.keys(cumulativeShiftTotals).length > 0 ? cumulativeShiftTotals : schedule.shiftTotals} whTotals={Object.keys(cumulativeWhTotals).length > 0 ? cumulativeWhTotals : undefined} />
               </div>
             )}
           </>
