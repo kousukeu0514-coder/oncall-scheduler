@@ -399,16 +399,21 @@ export function generateSchedule(
 
           const allowed = candidates.filter(isSeniorAllowed);
           const juniorOnly = allowed.filter(isJunior);
-          // 3〜5年目に優先権: 積み上げ不足なら6年目以上より先に選ぶ
-          const junior35 = juniorOnly.filter((s) => years(s) >= 3 && years(s) <= 5 && s.accumulated < s.target);
-          if (junior35.length > 0) {
-            // 6〜9年目が同等以上積んでいれば3〜5年目のみ
-            const junior69 = juniorOnly.filter((s) => years(s) >= 6 && years(s) <= 9);
-            const avg69 = junior69.length > 0 ? junior69.reduce((sum, s) => sum + s.shiftCount, 0) / junior69.length : -1;
-            const max35 = Math.max(...junior35.map((s) => s.shiftCount));
-            candidates = (avg69 < 0 || max35 <= avg69 + 1) ? junior35 : (juniorOnly.length > 0 ? juniorOnly : (allowed.length > 0 ? allowed : candidates));
+          // 3〜5年目でシフト4回未満を最優先（月最低4回確保）
+          const junior35Under4 = juniorOnly.filter((s) => years(s) >= 3 && years(s) <= 5 && s.shiftCount < JUNIOR_MIN_SHIFTS);
+          if (junior35Under4.length > 0) {
+            candidates = junior35Under4;
           } else {
-            candidates = juniorOnly.length > 2 ? juniorOnly : (allowed.length > 0 ? allowed : candidates);
+            // 4回以上でも3〜5年目が目標未達なら優先
+            const junior35 = juniorOnly.filter((s) => years(s) >= 3 && years(s) <= 5 && s.accumulated < s.target);
+            if (junior35.length > 0) {
+              const junior69 = juniorOnly.filter((s) => years(s) >= 6 && years(s) <= 9);
+              const avg69 = junior69.length > 0 ? junior69.reduce((sum, s) => sum + s.shiftCount, 0) / junior69.length : -1;
+              const max35 = Math.max(...junior35.map((s) => s.shiftCount));
+              candidates = (avg69 < 0 || max35 <= avg69 + 1) ? junior35 : (juniorOnly.length > 0 ? juniorOnly : (allowed.length > 0 ? allowed : candidates));
+            } else {
+              candidates = juniorOnly.length > 2 ? juniorOnly : (allowed.length > 0 ? allowed : candidates);
+            }
           }
         }
 
@@ -480,15 +485,21 @@ export function generateSchedule(
   return { schedule, warnings, newCarryover };
 }
 
+const JUNIOR_MIN_SHIFTS = 4; // 3〜5年目の月間シフト最低目標
+
+function juniorBonus(s: DoctorState): number {
+  const y = s.doctor.yearsOfExperience ?? 99;
+  if (y < 3 || y > 5) return 0;
+  // 4回未満なら大きなボーナスで最優先、4回以上なら小さなボーナス
+  return s.shiftCount < JUNIOR_MIN_SHIFTS ? 1.0 : 0.3;
+}
+
 function sortByRemaining(pool: DoctorState[]): DoctorState[] {
   return [...pool].sort((a, b) => {
     const yearsA = a.doctor.yearsOfExperience ?? 99;
     const yearsB = b.doctor.yearsOfExperience ?? 99;
-    // 3〜5年目に0.5単位ボーナス（下の学年が多めになるよう優先）
-    const bonusA = yearsA >= 3 && yearsA <= 5 ? 0.5 : 0;
-    const bonusB = yearsB >= 3 && yearsB <= 5 ? 0.5 : 0;
-    const adjRemainA = (a.target - a.accumulated) + bonusA;
-    const adjRemainB = (b.target - b.accumulated) + bonusB;
+    const adjRemainA = (a.target - a.accumulated) + juniorBonus(a);
+    const adjRemainB = (b.target - b.accumulated) + juniorBonus(b);
     if (Math.abs(adjRemainB - adjRemainA) > 0.05) return adjRemainB - adjRemainA;
     if (yearsA !== yearsB) return yearsA - yearsB;
     if (a.weekendHolidayCount !== b.weekendHolidayCount)
