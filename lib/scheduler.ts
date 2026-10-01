@@ -399,12 +399,17 @@ export function generateSchedule(
 
           const allowed = candidates.filter(isSeniorAllowed);
           const juniorOnly = allowed.filter(isJunior);
-          // 年次別最低回数未達の医師を最優先（3〜4年目:4回, 5〜6年目:3回, 7〜9年目:2回）
+          // 年次別最低回数未達を最優先 → 上限内を次点 → 上限超えは最後
           const underMin = juniorOnly.filter((s) => s.shiftCount < minShiftTarget(years(s)));
           if (underMin.length > 0) {
             candidates = underMin;
           } else {
-            candidates = juniorOnly.length > 2 ? juniorOnly : (allowed.length > 0 ? allowed : candidates);
+            const underSoftMax = juniorOnly.filter((s) => s.shiftCount < softMaxShiftTarget(years(s)));
+            if (underSoftMax.length > 0) {
+              candidates = underSoftMax;
+            } else {
+              candidates = juniorOnly.length > 2 ? juniorOnly : (allowed.length > 0 ? allowed : candidates);
+            }
           }
         }
 
@@ -476,20 +481,30 @@ export function generateSchedule(
   return { schedule, warnings, newCarryover };
 }
 
-// 年次別・月間シフト最低目標
+// 年次別・月間シフト最低・上限目標（回数）
 function minShiftTarget(y: number): number {
   if (y <= 4) return 4; // 3〜4年目: 4回
-  if (y <= 6) return 3; // 5〜6年目: 3回
-  if (y <= 9) return 2; // 7〜9年目: 2回
+  if (y <= 5) return 3; // 5年目: 3回
+  if (y <= 7) return 2; // 6〜7年目: 2回
+  if (y <= 9) return 1; // 8〜9年目: 1回
   return 0;
+}
+function softMaxShiftTarget(y: number): number {
+  if (y <= 4) return 5; // 3〜4年目: 5回（5.5は極力避ける）
+  if (y <= 5) return 4; // 5年目: 4回（4.5まで）
+  if (y <= 7) return 3; // 6〜7年目: 3回（3.5まで）
+  if (y <= 9) return 2; // 8〜9年目: 2回（2.5まで）
+  return 99;
 }
 
 function juniorBonus(s: DoctorState): number {
   const y = s.doctor.yearsOfExperience ?? 99;
   if (y < 3 || y > 9) return 0;
   const min = minShiftTarget(y);
-  // 最低目標未達なら大きなボーナス、達成済みなら小さなボーナス
-  return s.shiftCount < min ? 1.0 : 0.3;
+  const softMax = softMaxShiftTarget(y);
+  if (s.shiftCount < min) return 1.0;       // 最低未達: 最優先
+  if (s.shiftCount < softMax) return 0.3;   // 最低〜上限内: 適度に優先
+  return -0.5;                               // 上限超え: 抑制
 }
 
 function sortByRemaining(pool: DoctorState[]): DoctorState[] {
