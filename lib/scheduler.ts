@@ -356,16 +356,13 @@ export function generateSchedule(
           return base;
         })();
 
-        const oncallGapPreferred = candidates.filter(
-          (s) => !s.lastOncallDate || daysBetween(s.lastOncallDate, dateStr) >= 3
-        );
-        if (oncallGapPreferred.length > 0) candidates = oncallGapPreferred;
-
         if (isWH) {
+          // 週末: 当直間隔フィルターは連続週末チェックの後に適用（土屋が11/5→11/7で除外されないよう）
           const withSenior = candidates.filter(isSeniorAllowed);
           const seniorPool = withSenior.length > 0 ? withSenior : candidates;
           candidates = applyWeekendFilters(seniorPool, gapFiltered, base, dateStr, "当直", warnings, seniorReservedForWeekday, dayType, satRecent, satThisMonth);
 
+          // 2週連続チェック
           const noConsecutiveWeekend = candidates.filter(
             (s) => !s.lastWeekendOncallDate || daysBetween(s.lastWeekendOncallDate, dateStr) >= 8
           );
@@ -378,6 +375,12 @@ export function generateSchedule(
             if (consecutive.length > 0) warnings.push(`${dateStr} 当直[Soft緩和]: 2週連続土日当直を許容（他候補なし）→ ${consecutive.join(", ")}`);
           }
 
+          // 当直間隔フィルターを連続チェック後に適用
+          const oncallGapPref = candidates.filter(
+            (s) => !s.lastOncallDate || daysBetween(s.lastOncallDate, dateStr) >= 3
+          );
+          if (oncallGapPref.length > 0) candidates = oncallGapPref;
+
           const recentUnder3 = candidates.filter(
             (s) => s.weekendOncallCount + s.weekendOncallLastMonth < 3
           );
@@ -388,9 +391,25 @@ export function generateSchedule(
             warnings.push(`${dateStr} 当直[Soft緩和]: 2か月3回超えを許容（他候補なし）→ ${over3.join(", ")}`);
           }
         } else {
+          // 平日: 当直間隔フィルターを先に適用
+          const oncallGapPreferred = candidates.filter(
+            (s) => !s.lastOncallDate || daysBetween(s.lastOncallDate, dateStr) >= 3
+          );
+          if (oncallGapPreferred.length > 0) candidates = oncallGapPreferred;
+
           const allowed = candidates.filter(isSeniorAllowed);
           const juniorOnly = allowed.filter(isJunior);
-          candidates = juniorOnly.length > 2 ? juniorOnly : (allowed.length > 0 ? allowed : candidates);
+          // 3〜5年目に優先権: 積み上げ不足なら6年目以上より先に選ぶ
+          const junior35 = juniorOnly.filter((s) => years(s) >= 3 && years(s) <= 5 && s.accumulated < s.target);
+          if (junior35.length > 0) {
+            // 6〜9年目が同等以上積んでいれば3〜5年目のみ
+            const junior69 = juniorOnly.filter((s) => years(s) >= 6 && years(s) <= 9);
+            const avg69 = junior69.length > 0 ? junior69.reduce((sum, s) => sum + s.shiftCount, 0) / junior69.length : -1;
+            const max35 = Math.max(...junior35.map((s) => s.shiftCount));
+            candidates = (avg69 < 0 || max35 <= avg69 + 1) ? junior35 : (juniorOnly.length > 0 ? juniorOnly : (allowed.length > 0 ? allowed : candidates));
+          } else {
+            candidates = juniorOnly.length > 2 ? juniorOnly : (allowed.length > 0 ? allowed : candidates);
+          }
         }
 
         const chosen = pickBest(candidates);
@@ -463,11 +482,14 @@ export function generateSchedule(
 
 function sortByRemaining(pool: DoctorState[]): DoctorState[] {
   return [...pool].sort((a, b) => {
-    const remainA = a.target - a.accumulated;
-    const remainB = b.target - b.accumulated;
-    if (remainB !== remainA) return remainB - remainA;
     const yearsA = a.doctor.yearsOfExperience ?? 99;
     const yearsB = b.doctor.yearsOfExperience ?? 99;
+    // 3〜5年目に0.5単位ボーナス（下の学年が多めになるよう優先）
+    const bonusA = yearsA >= 3 && yearsA <= 5 ? 0.5 : 0;
+    const bonusB = yearsB >= 3 && yearsB <= 5 ? 0.5 : 0;
+    const adjRemainA = (a.target - a.accumulated) + bonusA;
+    const adjRemainB = (b.target - b.accumulated) + bonusB;
+    if (Math.abs(adjRemainB - adjRemainA) > 0.05) return adjRemainB - adjRemainA;
     if (yearsA !== yearsB) return yearsA - yearsB;
     if (a.weekendHolidayCount !== b.weekendHolidayCount)
       return a.weekendHolidayCount - b.weekendHolidayCount;
