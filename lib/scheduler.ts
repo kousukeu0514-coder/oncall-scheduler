@@ -363,16 +363,24 @@ export function generateSchedule(
           candidates = applyWeekendFilters(seniorPool, gapFiltered, base, dateStr, "当直", warnings, seniorReservedForWeekday, dayType, satRecent, satThisMonth);
 
           // 2週連続チェック
-          const noConsecutiveWeekend = candidates.filter(
-            (s) => !s.lastWeekendOncallDate || daysBetween(s.lastWeekendOncallDate, dateStr) >= 8
-          );
+          const isNonConsecutive = (s: DoctorState) =>
+            !s.lastWeekendOncallDate || daysBetween(s.lastWeekendOncallDate, dateStr) >= 8;
+          const noConsecutiveWeekend = candidates.filter(isNonConsecutive);
           if (noConsecutiveWeekend.length > 0) {
             candidates = noConsecutiveWeekend;
           } else {
-            const consecutive = candidates.filter(
-              (s) => s.lastWeekendOncallDate && daysBetween(s.lastWeekendOncallDate, dateStr) < 8
-            ).map((s) => `${s.doctor.name}(前回:${s.lastWeekendOncallDate})`);
-            if (consecutive.length > 0) warnings.push(`${dateStr} 当直[Soft緩和]: 2週連続土日当直を許容（他候補なし）→ ${consecutive.join(", ")}`);
+            // Step優先候補が全員連続 → 全ステップ(step2含む)から非連続候補を探す
+            const allJuniorPool = gapFiltered.filter((s) => isSeniorAllowed(s) && !s.doctor.hasChildcare);
+            const satFallback = applySaturdayFilter(allJuniorPool, dayType, satRecent, satThisMonth);
+            const widerPool = satFallback.relaxed === "all" ? allJuniorPool : satFallback.result;
+            const widerNonConsec = widerPool.filter(isNonConsecutive);
+            if (widerNonConsec.length > 0) {
+              candidates = widerNonConsec;
+            } else {
+              const consecutive = candidates.filter((s) => !isNonConsecutive(s))
+                .map((s) => `${s.doctor.name}(前回:${s.lastWeekendOncallDate})`);
+              if (consecutive.length > 0) warnings.push(`${dateStr} 当直[Soft緩和]: 2週連続土日当直を許容（他候補なし）→ ${consecutive.join(", ")}`);
+            }
           }
 
           // 当直間隔フィルターを連続チェック後に適用
@@ -490,10 +498,10 @@ function minShiftTarget(y: number): number {
   return 0;
 }
 function softMaxShiftTarget(y: number): number {
-  if (y <= 4) return 5; // 3〜4年目: 5回（5.5は極力避ける）
-  if (y <= 5) return 4; // 5年目: 4回（4.5まで）
-  if (y <= 7) return 3; // 6〜7年目: 3回（3.5まで）
-  if (y <= 9) return 2; // 8〜9年目: 2回（2.5まで）
+  if (y <= 4) return 5; // 3〜4年目: 5回（5.5コマまで許容、6はHARD_MAXで阻止）
+  if (y <= 5) return 5; // 5年目: 5回
+  if (y <= 7) return 4; // 6〜7年目: 4回
+  if (y <= 9) return 3; // 8〜9年目: 3回
   return 99;
 }
 
