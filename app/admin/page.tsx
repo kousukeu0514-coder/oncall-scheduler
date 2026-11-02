@@ -380,7 +380,7 @@ export default function AdminPage() {
               {doctors.map((doc) => {
                 const base = getTargetUnits(doc.yearsOfExperience ?? 3);
                 const baseTarget = getAdjustedTarget(base, doc.isRotating);
-                const carry = carryover[doc.name] ?? 0;
+                const carry = Math.max(-1.0, carryover[doc.name] ?? 0);
                 const adjusted = doc.hasChildcare === true
                     ? Math.min(2, Math.max(0.5, Math.round((baseTarget - carry) * 2) / 2))
                     : Math.min(5.5, Math.max(0.5, Math.round((baseTarget - carry) * 2) / 2));
@@ -434,7 +434,7 @@ export default function AdminPage() {
                   {doctors.map((doc) => {
                     const base = getTargetUnits(doc.yearsOfExperience ?? 3);
                     const baseTarget = getAdjustedTarget(base, doc.isRotating);
-                    const carry = carryover[doc.name] ?? 0;
+                    const carry = Math.max(-1.0, carryover[doc.name] ?? 0);
                     const adjusted = doc.hasChildcare === true
                     ? Math.min(2, Math.max(0.5, Math.round((baseTarget - carry) * 2) / 2))
                     : Math.min(5.5, Math.max(0.5, Math.round((baseTarget - carry) * 2) / 2));
