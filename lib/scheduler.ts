@@ -216,7 +216,8 @@ export function generateSchedule(
   const states: DoctorState[] = doctors.map((doc) => {
     const base = getTargetUnits(doc.yearsOfExperience ?? 3);
     const baseTarget = getAdjustedTarget(base, doc.isRotating);
-    const carry = carryover[doc.name] ?? 0;
+    const rawCarry = carryover[doc.name] ?? 0;
+    const carry = Math.max(-1.0, rawCarry); // 赤字繰越は最大1単位まで（目標の過度な上昇を防ぐ）
     const adjusted = baseTarget - carry;
     const target = doc.hasChildcare === true
       ? Math.min(2, Math.max(0.5, Math.round(adjusted * 2) / 2))
