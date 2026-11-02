@@ -411,18 +411,21 @@ export function generateSchedule(
 
           const allowed = candidates.filter(isSeniorAllowed);
           const juniorOnly = allowed.filter(isJunior);
-          // 0回シニア（目標あり）をjunior最低未達と同等優先度で扱う
+          // 優先順位: ①0回シニア → ②junior最低未達 → ③junior softMax未達 → ④その他
           const seniorUnassigned = allowed.filter((s) => !isJunior(s) && s.shiftCount === 0 && s.target >= 1);
-          const underMin = juniorOnly.filter((s) => s.shiftCount < minShiftTarget(years(s)));
-          const highPriority = [...underMin, ...seniorUnassigned];
-          if (highPriority.length > 0) {
-            candidates = highPriority;
+          if (seniorUnassigned.length > 0) {
+            candidates = seniorUnassigned;
           } else {
-            const underSoftMax = juniorOnly.filter((s) => s.shiftCount < softMaxShiftTarget(years(s)));
-            if (underSoftMax.length > 0) {
-              candidates = underSoftMax;
+            const underMin = juniorOnly.filter((s) => s.shiftCount < minShiftTarget(years(s)));
+            if (underMin.length > 0) {
+              candidates = underMin;
             } else {
-              candidates = juniorOnly.length > 2 ? juniorOnly : (allowed.length > 0 ? allowed : candidates);
+              const underSoftMax = juniorOnly.filter((s) => s.shiftCount < softMaxShiftTarget(years(s)));
+              if (underSoftMax.length > 0) {
+                candidates = underSoftMax;
+              } else {
+                candidates = juniorOnly.length > 2 ? juniorOnly : (allowed.length > 0 ? allowed : candidates);
+              }
             }
           }
         }
