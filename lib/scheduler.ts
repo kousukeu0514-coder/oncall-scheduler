@@ -324,7 +324,11 @@ export function generateSchedule(
         if (locked.oncall) {
           const s = states.find((s) => s.doctor.name === locked.oncall);
           if (s) {
-            s.accumulated += getShiftUnits(dayType, "oncall");
+            const units = getShiftUnits(dayType, "oncall");
+            if (s.accumulated + units > HARD_MAX) {
+              warnings.push(`${dateStr} 当直[事前確定]: ${locked.oncall} の累積が上限(${HARD_MAX})を超えます（${s.accumulated.toFixed(1)}+${units}=${(s.accumulated+units).toFixed(1)}）`);
+            }
+            s.accumulated += units;
             s.shiftCount++; s.shiftTotal++;
             if (isWH) {
               s.weekendHolidayCount++;
