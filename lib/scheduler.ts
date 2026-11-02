@@ -528,9 +528,12 @@ function sortByRemaining(pool: DoctorState[]): DoctorState[] {
   return [...pool].sort((a, b) => {
     const yearsA = a.doctor.yearsOfExperience ?? 99;
     const yearsB = b.doctor.yearsOfExperience ?? 99;
-    const adjRemainA = (a.target - a.accumulated) + juniorBonus(a);
-    const adjRemainB = (b.target - b.accumulated) + juniorBonus(b);
-    if (Math.abs(adjRemainB - adjRemainA) > 0.05) return adjRemainB - adjRemainA;
+    // 目標達成率（割合）ベースで優先: 達成率が低い人を優先することで年次間の公平な分配を実現
+    const fracA = a.target > 0 ? (1 - a.accumulated / a.target) : 0;
+    const fracB = b.target > 0 ? (1 - b.accumulated / b.target) : 0;
+    const adjA = fracA * 5 + juniorBonus(a);
+    const adjB = fracB * 5 + juniorBonus(b);
+    if (Math.abs(adjB - adjA) > 0.05) return adjB - adjA;
     if (yearsA !== yearsB) return yearsA - yearsB;
     if (a.weekendHolidayCount !== b.weekendHolidayCount)
       return a.weekendHolidayCount - b.weekendHolidayCount;
