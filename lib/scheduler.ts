@@ -466,7 +466,9 @@ export function generateSchedule(
   states.forEach((s) => {
     unitCounts[s.doctor.name] = s.accumulated;
     weekendHolidayCounts[s.doctor.name] = s.weekendHolidayCount;
-    newCarryover[s.doctor.name] = Math.round((s.accumulated - s.baseTarget) * 10) / 10;
+    // 赤字繰越は最大1.0単位まで（過去の未達が目標を過度に押し上げるのを防ぐ）
+    const rawCarryover = Math.round((s.accumulated - s.baseTarget) * 10) / 10;
+    newCarryover[s.doctor.name] = Math.max(-1.0, rawCarryover);
     newCarryover[`${WH_PREFIX}${s.doctor.name}`] = s.weekendHolidayTotal;
     newCarryover[`${WHO_PREFIX}${s.doctor.name}`] = s.weekendOncallCount;
     newCarryover[`__sc__${s.doctor.name}`] = s.shiftTotal;
