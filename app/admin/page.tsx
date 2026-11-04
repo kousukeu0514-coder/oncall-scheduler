@@ -324,7 +324,13 @@ export default function AdminPage() {
                 <option key={y} value={y}>{y}年</option>
               ))}
             </select>
-            <select value={month} onChange={(e) => setMonth(Number(e.target.value))} className="border rounded px-3 py-2 text-gray-800 bg-white">
+            <select value={month} onChange={(e) => {
+              const m = Number(e.target.value);
+              setMonth(m);
+              // 現在月より前の月を選んだら翌年に自動設定
+              if (m <= NOW.getMonth()) setYear(NOW.getFullYear() + 1);
+              else setYear(NOW.getFullYear());
+            }} className="border rounded px-3 py-2 text-gray-800 bg-white">
               {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
                 <option key={m} value={m}>{m}月</option>
               ))}
