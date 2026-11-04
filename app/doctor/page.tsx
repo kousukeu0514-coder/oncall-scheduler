@@ -118,7 +118,13 @@ export default function DoctorPage() {
               </select>
               <select
                 value={startMonth}
-                onChange={(e) => setStartMonth(Number(e.target.value))}
+                onChange={(e) => {
+                  const m = Number(e.target.value);
+                  setStartMonth(m);
+                  // 現在月より前の月を選んだら翌年に自動設定
+                  if (m <= NOW.getMonth()) setStartYear(NOW.getFullYear() + 1);
+                  else setStartYear(NOW.getFullYear());
+                }}
                 className="border rounded-lg px-3 py-2 bg-white text-gray-800"
               >
                 {monthOptions.map((m) => <option key={m} value={m}>{m}月</option>)}
