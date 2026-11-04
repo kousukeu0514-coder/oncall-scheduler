@@ -23,6 +23,7 @@ interface DoctorState {
   lastShiftDate: string | null;
   lastOncallDate: string | null; // 当直-当直間の中2日soft用
   lastWeekendOncallDate: string | null; // 2週連続土日当直回避soft用
+  fridayOncallCount: number;    // 今月の金曜当直回数（月1回制限用）
 }
 
 const SAT_PREFIX = "__sat__";   // 旧キー（互換用）
@@ -236,6 +237,7 @@ export function generateSchedule(
       lastShiftDate: null,
       lastOncallDate: null,
       lastWeekendOncallDate: null,
+      fridayOncallCount: 0,
     };
   });
 
@@ -339,6 +341,7 @@ export function generateSchedule(
             }
             s.lastShiftDate = dateStr;
             s.lastOncallDate = dateStr;
+            if (new Date(dateStr + "T00:00:00").getDay() === 5) s.fridayOncallCount++;
             if (dayType === "saturday") satThisMonth.add(locked.oncall);
           }
         }
@@ -410,6 +413,14 @@ export function generateSchedule(
           );
           if (oncallGapPreferred.length > 0) candidates = oncallGapPreferred;
 
+          // 金曜: 月1回制限
+          const isFriday = new Date(dateStr + "T00:00:00").getDay() === 5;
+          if (isFriday) {
+            const fridayUnder1 = candidates.filter((s) => s.fridayOncallCount < 1);
+            if (fridayUnder1.length > 0) candidates = fridayUnder1;
+            else warnings.push(`${dateStr} 当直[Soft緩和]: 金曜当直月1回制限を緩和（他候補なし）`);
+          }
+
           const allowed = candidates.filter(isSeniorAllowed);
           const juniorOnly = allowed.filter(isJunior);
           // 優先順位: ①0回シニア → ②junior最低未達 → ③junior softMax未達 → ④その他
@@ -440,6 +451,7 @@ export function generateSchedule(
           chosen.lastShiftDate = dateStr;
           chosen.lastOncallDate = dateStr;
           if (isWH) { chosen.weekendOncallCount++; chosen.lastWeekendOncallDate = dateStr; }
+          if (new Date(dateStr + "T00:00:00").getDay() === 5) chosen.fridayOncallCount++;
           if (dayType === "saturday") satThisMonth.add(chosen.doctor.name);
         } else {
           warnings.push(`${dateStr} 当直: 割り当て可能な医師がいません`);
